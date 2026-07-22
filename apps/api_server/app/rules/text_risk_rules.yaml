@@ -1,0 +1,182 @@
+version: "1.0.0"
+
+thresholds:
+  medium: 25
+  high: 60
+
+rules:
+  - id: R-TEXT-001
+    category: payment
+    title: 出现转账或借款请求
+    score: 25
+    match:
+      any:
+        - "转账"
+        - "汇款"
+        - "打钱"
+        - "借我"
+        - "借点钱"
+        - "借钱"
+        - "付款"
+        - "收款码"
+    explanation: 文本中出现了直接的资金操作请求。
+    advice: 在确认身份和收款账户前，不要转账或付款。
+
+  - id: R-TEXT-002
+    category: urgency
+    title: 对方制造时间压力
+    score: 15
+    match:
+      any:
+        - "马上"
+        - "立刻"
+        - "赶紧"
+        - "现在就"
+        - "最后机会"
+        - "来不及了"
+        - "不许挂电话"
+    explanation: 对方使用紧迫表达压缩核验和思考时间。
+    advice: 暂停当前操作，至少留出时间独立核验。
+
+  - id: R-TEXT-003
+    category: secrecy
+    title: 对方要求保密
+    score: 20
+    match:
+      any:
+        - "不要告诉别人"
+        - "别告诉家里人"
+        - "保密"
+        - "谁也别说"
+        - "不要声张"
+    explanation: 要求对交易或联系内容保密是常见操纵信号。
+    advice: 不要独自处理，立即向可信家人或联系人求助。
+
+  - id: R-TEXT-004
+    category: impersonation
+    title: 存在身份冒充话术
+    score: 20
+    match:
+      any:
+        - "我是你儿子"
+        - "我是你女儿"
+        - "我是你领导"
+        - "我是老师"
+        - "手机坏了"
+        - "换新号码了"
+        - "这是我的新号"
+    explanation: 对方声称更换号码或以亲属、领导、老师身份提出请求。
+    advice: 退出当前会话，通过原号码或当面方式核验身份。
+
+  - id: R-TEXT-005
+    category: credential
+    title: 对方索取短信验证码
+    score: 60
+    force_level: high
+    match:
+      any:
+        - "验证码"
+        - "短信码"
+        - "动态码"
+      exclude_any:
+        - "不要提供验证码"
+        - "切勿提供验证码"
+        - "不要告诉任何人验证码"
+    explanation: 验证码可能被用于登录账号、修改密码或完成支付。
+    advice: 绝对不要向对方提供任何验证码。
+
+  - id: R-TEXT-006
+    category: remote_control
+    title: 对方诱导远程控制或屏幕共享
+    score: 60
+    force_level: high
+    match:
+      any:
+        - "屏幕共享"
+        - "远程控制"
+        - "远程协助"
+        - "下载会议软件"
+        - "安装远程软件"
+        - "打开共享屏幕"
+    explanation: 远程控制或屏幕共享可能泄露密码、验证码和支付界面。
+    advice: 不要安装对方指定的软件，也不要开启屏幕共享。
+
+  - id: R-TEXT-007
+    category: authority
+    title: 公检法安全账户话术
+    score: 80
+    force_level: high
+    match:
+      all_groups:
+        - ["公安", "警察", "检察院", "法院"]
+        - ["安全账户", "涉案账户", "资金审查", "资金清查"]
+    explanation: 公检法机关不会通过聊天要求向所谓安全账户转账。
+    advice: 立即挂断，通过公开官方渠道核实，不要按对方要求转账。
+
+  - id: R-TEXT-008
+    category: investment
+    title: 高收益或保本投资诱导
+    score: 40
+    match:
+      all_groups:
+        - ["投资", "理财", "项目", "股票", "基金"]
+        - ["稳赚", "保本", "高回报", "内幕消息", "稳赚不赔"]
+    explanation: 承诺保本或异常高收益属于典型投资诈骗信号。
+    advice: 不要向私人账户或陌生平台充值，先核验平台资质。
+
+  - id: R-TEXT-009
+    category: fake_service
+    title: 客服退款或理赔诱导
+    score: 35
+    match:
+      all_groups:
+        - ["客服", "退款", "理赔", "取消会员", "关闭扣费"]
+        - ["点击链接", "打开链接", "下载软件", "共享屏幕", "验证码"]
+    explanation: 冒充客服常以退款、理赔或取消扣费为由诱导点击链接或提供凭证。
+    advice: 退出聊天，直接从官方 App 或官网进入客服渠道核验。
+
+  - id: R-TEXT-010
+    category: loan
+    title: 贷款前置收费
+    score: 45
+    match:
+      all_groups:
+        - ["贷款", "放款", "额度"]
+        - ["保证金", "解冻费", "手续费", "刷流水"]
+    explanation: 正常贷款通常不会要求先交保证金、解冻费或刷流水。
+    advice: 不要支付任何前置费用，并通过正规金融机构核实。
+
+  - id: R-TEXT-011
+    category: crypto
+    title: 虚拟币或非正规支付要求
+    score: 30
+    match:
+      any:
+        - "虚拟币"
+        - "数字货币"
+        - "USDT"
+        - "泰达币"
+        - "礼品卡充值"
+    explanation: 虚拟币和礼品卡交易难以追回，常被用于规避正常支付渠道。
+    advice: 不要按陌生人的要求购买或转移虚拟币、礼品卡。
+
+  - id: R-TEXT-012
+    category: composite
+    title: 冒充身份并紧急要求秘密转账
+    score: 50
+    force_level: high
+    match:
+      all_groups:
+        - [
+            "我是你儿子",
+            "我是你女儿",
+            "我是你领导",
+            "我是老师",
+            "手机坏了",
+            "换新号码了",
+          ]
+        - ["转账", "汇款", "打钱", "借钱", "付款"]
+        - ["马上", "立刻", "赶紧", "现在就", "来不及了"]
+        - ["不要告诉别人", "别告诉家里人", "保密", "谁也别说"]
+    explanation: 身份变化、紧急资金请求和保密要求同时出现，构成高风险组合。
+    advice: 立即停止付款，通过原号码联系本人，并通知可信家人协助核验。
