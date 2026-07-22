@@ -1,0 +1,76 @@
+# -----------------------------
+# Environment configuration
+# -----------------------------
+.env
+.env.*
+!.env.example
+
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.venv/
+venv/
+env/
+
+# -----------------------------
+# Node.js / Vue
+# -----------------------------
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -----------------------------
+# IDE
+# -----------------------------
+.vscode/
+.idea/
+*.iml
+
+# -----------------------------
+# Operating system
+# -----------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -----------------------------
+# Logs
+# -----------------------------
+*.log
+logs/
+
+# -----------------------------
+# Runtime data
+# -----------------------------
+data/
+uploads/
+temp/
+tmp/
+
+postgres_data/
+redis_data/
+minio_data/
+
+# -----------------------------
+# Sensitive files
+# -----------------------------
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
