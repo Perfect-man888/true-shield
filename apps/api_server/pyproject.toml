@@ -5,8 +5,11 @@ description = "真信盾家庭级 AI 反诈与可信联系系统后端 API"
 requires-python = ">=3.12,<3.13"
 
 dependencies = [
+    "alembic>=1.18.5",
+    "asyncpg>=0.31.0",
     "fastapi[standard-no-fastapi-cloud-cli]",
     "pydantic-settings",
+    "sqlalchemy[asyncio]>=2.0.51",
 ]
 
 [dependency-groups]
