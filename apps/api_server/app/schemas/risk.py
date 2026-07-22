@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
@@ -70,3 +72,11 @@ class TextRiskAnalysisResponse(BaseModel):
     actions: list[str]
     disclaimer: str
     rule_version: str
+
+class PersistedTextRiskAnalysisResponse(
+    TextRiskAnalysisResponse
+):
+    """已经保存到数据库的文本风险分析结果。"""
+
+    event_id: uuid.UUID
+    created_at: datetime
