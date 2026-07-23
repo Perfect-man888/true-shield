@@ -80,6 +80,47 @@ class TextRuleSet(BaseModel):
 class TextRiskAnalyzer:
     """基于 YAML 规则的文本风险分析器。"""
 
+    # 这些类别表示“危险操作”。
+    # 当危险词受到“不要、禁止、请勿”等否定词控制时，
+    # 不应作为风险证据。
+    _NEGATION_AWARE_CATEGORIES = {
+        "payment",
+        "credential",
+        "link",
+        "remote_control",
+        "software_install",
+        "sensitive_info",
+    }
+
+    # 当前已经确认需要进行否定判断的规则。
+    _NEGATION_AWARE_RULE_IDS = {
+        "R-TEXT-001",
+        "R-TEXT-005",
+    }
+
+    # 标点和转折词会终止前面的否定作用范围。
+    _CLAUSE_BOUNDARY_RE = re.compile(
+        r"(?:但是|不过|然而|可是|却|但|[。！？!?；;，,\n])"
+    )
+
+    # 否定词后最多允许间隔 12 个字符。
+    _NEGATION_RE = re.compile(
+        r"(?:千万|绝对|务必)?"
+        r"(?:不要|别|切勿|请勿|禁止|不可|不能|不应|无需|无须)"
+        r"(?P<between>.{0,12})$"
+    )
+
+    # 下面这些表达中的“不要”不是安全否定。
+    # 例如“不要错过，马上转账”仍然具有风险。
+    _NEGATION_FALSE_FRIENDS = (
+        "错过",
+        "耽误",
+        "犹豫",
+        "拖延",
+        "忘了",
+        "忘记",
+    )
+
     def __init__(self, rules_path: Path | None = None) -> None:
         self.rules_path = rules_path or (
             Path(__file__).resolve().parents[1]
@@ -125,22 +166,137 @@ class TextRiskAnalyzer:
     ) -> bool:
         return self._normalize(keyword) in normalized_text
 
+    @staticmethod
+    def _find_term_positions(
+        text: str,
+        keyword: str,
+    ) -> list[tuple[int, int]]:
+        """查找关键词在原始文本中的所有位置。"""
+
+        source = text.casefold()
+        term = keyword.strip().casefold()
+
+        if not term:
+            return []
+
+        positions: list[tuple[int, int]] = []
+        search_start = 0
+
+        while True:
+            start = source.find(term, search_start)
+
+            if start == -1:
+                break
+
+            end = start + len(term)
+            positions.append((start, end))
+
+            search_start = start + max(len(term), 1)
+
+        return positions
+
+    def _is_negated(
+        self,
+        rule: TextRiskRule,
+        text: str,
+        term_start: int,
+    ) -> bool:
+        """
+        判断某个危险词是否受到附近否定词控制。
+
+        例如：
+        “不要转账”中的“转账”会被抑制；
+        “不要转账，但现在马上转账”中后一个“转账”
+        不会被前面的“不要”抑制。
+        """
+
+        if (
+            rule.id not in self._NEGATION_AWARE_RULE_IDS
+            and rule.category
+            not in self._NEGATION_AWARE_CATEGORIES
+        ):
+            return False
+
+        prefix = text[:term_start].casefold()
+
+        # 只分析当前分句，标点和转折词之前的否定词不生效。
+        boundaries = list(
+            self._CLAUSE_BOUNDARY_RE.finditer(prefix)
+        )
+
+        if boundaries:
+            prefix = prefix[boundaries[-1].end():]
+
+        compact_prefix = self._normalize(prefix)
+
+        negation_match = self._NEGATION_RE.search(
+            compact_prefix
+        )
+
+        if negation_match is None:
+            return False
+
+        between = negation_match.group("between")
+
+        # “不要错过”“别忘了”等不属于安全提醒。
+        if any(
+            between.startswith(false_friend)
+            for false_friend in self._NEGATION_FALSE_FRIENDS
+        ):
+            return False
+
+        return True
+
+    def _has_effective_term(
+        self,
+        rule: TextRiskRule,
+        text: str,
+        keyword: str,
+    ) -> bool:
+        """
+        判断关键词是否存在至少一次未被否定的有效命中。
+        """
+
+        positions = self._find_term_positions(
+            text,
+            keyword,
+        )
+
+        # 保留原来的去空格匹配能力。
+        if not positions:
+            return self._contains(
+                self._normalize(text),
+                keyword,
+            )
+
+        return any(
+            not self._is_negated(
+                rule,
+                text,
+                start,
+            )
+            for start, _ in positions
+        )
+
     def _match_rule(
         self,
         rule: TextRiskRule,
         request: TextRiskAnalysisRequest,
     ) -> list[str] | None:
-        text = self._normalize(request.text)
+        raw_text = request.text
+        normalized_text = self._normalize(raw_text)
         match = rule.match
 
-        # 排除银行安全提醒等反向表达。
+        # exclude_any 仍然作为整条规则的排除条件。
         if any(
-            self._contains(text, keyword)
+            self._contains(
+                normalized_text,
+                keyword,
+            )
             for keyword in match.exclude_any
         ):
             return None
 
-        # 检查上下文条件。
         context = request.context.model_dump()
 
         for field_name, expected_value in match.context.items():
@@ -156,12 +312,16 @@ class TextRiskAnalyzer:
             or match.context
         )
 
-        # any 中至少命中一个。
+        # any 中至少有一个未被否定的有效关键词。
         if match.any:
             any_terms = [
                 keyword
                 for keyword in match.any
-                if self._contains(text, keyword)
+                if self._has_effective_term(
+                    rule,
+                    raw_text,
+                    keyword,
+                )
             ]
 
             if not any_terms:
@@ -169,22 +329,30 @@ class TextRiskAnalyzer:
 
             matched_terms.extend(any_terms)
 
-        # all 中所有词都必须命中。
+        # all 中的每个关键词都必须存在有效命中。
         if match.all:
             if not all(
-                self._contains(text, keyword)
+                self._has_effective_term(
+                    rule,
+                    raw_text,
+                    keyword,
+                )
                 for keyword in match.all
             ):
                 return None
 
             matched_terms.extend(match.all)
 
-        # 每个分组至少命中一个词。
+        # 每个 all_groups 分组至少命中一个有效关键词。
         for group in match.all_groups:
             group_terms = [
                 keyword
                 for keyword in group
-                if self._contains(text, keyword)
+                if self._has_effective_term(
+                    rule,
+                    raw_text,
+                    keyword,
+                )
             ]
 
             if not group_terms:
@@ -195,9 +363,7 @@ class TextRiskAnalyzer:
         if not has_condition:
             return None
 
-        # 去重，同时保持原顺序。
         return list(dict.fromkeys(matched_terms))
-
     @staticmethod
     def _stronger_level(
         current: RiskLevel | None,
@@ -220,16 +386,18 @@ class TextRiskAnalyzer:
 
         return current
 
-    @staticmethod
+    
     def _locate_matched_terms(
+        self,
         text: str,
         matched_terms: list[str],
+        rule: TextRiskRule,
     ) -> list[RiskTermMatch]:
         """
-        查找所有命中词在原始文本中的位置。
+        查找有效命中词在原始文本中的位置。
 
-        start 为包含边界，end 为不包含边界，
-        因此前端可以直接使用 text[start:end]。
+        被“不要、请勿、禁止”等否定词控制的命中，
+        不会作为风险证据返回。
         """
 
         normalized_text = text.casefold()
@@ -256,6 +424,19 @@ class TextRiskAnalyzer:
                     break
 
                 end = start + len(term)
+
+                # 被否定的词不加入 evidence。
+                if self._is_negated(
+                    rule,
+                    text,
+                    start,
+                ):
+                    search_start = start + max(
+                        len(term),
+                        1,
+                    )
+                    continue
+
                 position_key = (
                     start,
                     end,
@@ -273,7 +454,6 @@ class TextRiskAnalyzer:
                         )
                     )
 
-                # 同一个词继续向后查找，支持一段文本中重复出现。
                 search_start = start + max(
                     len(term),
                     1,
@@ -287,6 +467,7 @@ class TextRiskAnalyzer:
                 item.term,
             ),
         )
+
     def _calculate_score(
         self,
         matched: list[
@@ -425,6 +606,7 @@ class TextRiskAnalyzer:
                 matches=self._locate_matched_terms(
                     request.text,
                     matched_terms,
+                    rule,
                 ),
             )
             for rule, matched_terms in matched

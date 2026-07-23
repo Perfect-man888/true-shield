@@ -245,3 +245,78 @@ def test_risk_evidence_contains_term_positions() -> None:
         )
 
     assert "资金请求" in payment_evidence.tags
+
+def test_negated_transfer_and_verification_code_are_low_risk() -> None:
+    """安全提醒中的转账和验证码不应被判定为风险。"""
+
+    result = analyze(
+        "千万不要给陌生人转账，也不要把验证码告诉骗子。"
+    )
+
+    assert result.risk_level == RiskLevel.LOW
+    assert result.score == 0
+    assert result.evidence == []
+
+
+def test_police_warning_is_low_risk() -> None:
+    """警方安全提醒不应触发危险操作规则。"""
+
+    result = analyze(
+        "警方提醒：不要点击陌生链接，不要向任何人提供验证码。"
+    )
+
+    assert result.risk_level == RiskLevel.LOW
+    assert result.score == 0
+    assert result.evidence == []
+
+
+def test_later_transfer_request_is_not_suppressed_by_earlier_negation() -> None:
+    """转折词之后的真实资金要求仍应被识别。"""
+
+    result = analyze(
+        "虽然警方说不要转账，但你现在必须马上把钱转过来。"
+    )
+
+    assert result.risk_level == RiskLevel.MEDIUM
+    assert result.score == 40
+
+    evidence_by_rule = {
+        evidence.rule_id: evidence
+        for evidence in result.evidence
+    }
+
+    assert set(evidence_by_rule) == {
+        "R-TEXT-001",
+        "R-TEXT-002",
+    }
+
+    payment_evidence = evidence_by_rule["R-TEXT-001"]
+
+    assert payment_evidence.matched_terms == [
+        "把钱转过来"
+    ]
+
+    assert [
+        match.term
+        for match in payment_evidence.matches
+    ] == [
+        "把钱转过来"
+    ]
+
+
+def test_do_not_forget_transfer_is_still_a_transfer_request() -> None:
+    """“不要忘了转账”是操作要求，不属于安全提醒。"""
+
+    result = analyze(
+        "不要忘了给对方转账。"
+    )
+
+    assert result.risk_level == RiskLevel.MEDIUM
+    assert result.score == 25
+
+    assert {
+        evidence.rule_id
+        for evidence in result.evidence
+    } == {
+        "R-TEXT-001"
+    }
