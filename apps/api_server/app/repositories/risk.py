@@ -40,16 +40,26 @@ async def create_risk_event(
     user_id: uuid.UUID,
     request: TextRiskAnalysisRequest,
     analysis: TextRiskAnalysisResponse,
+    source_type: str = "text",
+    source_text: str | None = None,
 ) -> RiskEvent:
-    """保存一次文本风险分析事件及其全部证据。"""
+    """保存一次风险分析事件及其全部证据。"""
 
     event = RiskEvent(
         user_id=user_id,
-        source_type="text",
-        source_text=request.text,
+        source_type=source_type,
+        source_text=(
+            request.text
+            if source_text is None
+            else source_text
+        ),
         risk_level=analysis.risk_level.value,
         risk_score=analysis.score,
+
+        # TextRiskAnalysisResponse 没有 summary 字段，
+        # 因此通过已有函数生成摘要。
         summary=build_event_summary(analysis),
+
         actions=analysis.actions,
         disclaimer=analysis.disclaimer,
         rule_version=analysis.rule_version,
@@ -65,10 +75,10 @@ async def create_risk_event(
             match_positions=[
                 match.model_dump()
                 for match in evidence.matches
-                ],
+            ],
             signal_weight=evidence.score,
             explanation=evidence.explanation,
-                )
+        )
         for evidence in analysis.evidence
     ]
 
@@ -78,7 +88,6 @@ async def create_risk_event(
     await db.refresh(event)
 
     return event
-
 
 async def list_risk_events(
     db: AsyncSession,

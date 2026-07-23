@@ -299,7 +299,9 @@ async def test_user_cannot_read_another_users_event(
         headers=other_headers,
     )
 
-    assert other_list_response.status_code == 200
+    assert other_list_response.status_code == 200, (
+    other_list_response.text
+    )
 
     other_list = other_list_response.json()
 

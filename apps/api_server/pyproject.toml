@@ -9,10 +9,14 @@ dependencies = [
     "asyncpg>=0.31.0",
     "email-validator>=2.3.0",
     "fastapi[standard-no-fastapi-cloud-cli]",
+    "onnxruntime>=1.27.0",
+    "pillow>=12.3.0",
     "pwdlib[argon2]>=0.3.0",
     "pydantic-settings",
     "pyjwt>=2.13.0",
+    "python-multipart>=0.0.32",
     "pyyaml>=6.0.3",
+    "rapidocr>=3.9.2",
     "sqlalchemy[asyncio]>=2.0.51",
 ]
 

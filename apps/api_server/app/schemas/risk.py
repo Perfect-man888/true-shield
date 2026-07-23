@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -136,3 +137,50 @@ class RiskEventDetailResponse(
     source_type: str
     source_text: str
     summary: str
+
+class OCRTextLineResponse(BaseModel):
+    """单行 OCR 识别结果。"""
+
+    text: str = Field(
+        min_length=1,
+        description="识别出的文字",
+    )
+
+    confidence: float = Field(
+        ge=0,
+        le=1,
+        description="OCR 识别置信度",
+    )
+
+    box: list[tuple[int, int]] = Field(
+        default_factory=list,
+        description="文字在原始图片中的坐标",
+    )
+
+
+class ImageRiskAnalysisResponse(
+    PersistedTextRiskAnalysisResponse
+):
+    """图片 OCR 与风险分析联合响应。"""
+
+    source_type: Literal["image"] = "image"
+
+    extracted_text: str = Field(
+        min_length=1,
+        description="从图片中提取出的完整文字",
+    )
+
+    image_width: int = Field(
+        gt=0,
+        description="原始图片宽度",
+    )
+
+    image_height: int = Field(
+        gt=0,
+        description="原始图片高度",
+    )
+
+    ocr_lines: list[OCRTextLineResponse] = Field(
+        default_factory=list,
+        description="OCR 逐行识别结果",
+    )
