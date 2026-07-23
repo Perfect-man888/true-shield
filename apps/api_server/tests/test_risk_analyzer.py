@@ -320,3 +320,82 @@ def test_do_not_forget_transfer_is_still_a_transfer_request() -> None:
     } == {
         "R-TEXT-001"
     }
+
+def test_police_impersonation_transfer_chain_triggers_combo_rule() -> None:
+    """冒充公安并要求保密、紧急转账，应触发组合风险规则。"""
+
+    result = analyze(
+        "我是公安局的，你涉嫌洗钱。"
+        "这件事不能告诉家人，必须马上把钱转到安全账户。"
+    )
+
+    assert result.risk_level == RiskLevel.HIGH
+
+    evidence_by_rule = {
+        evidence.rule_id: evidence
+        for evidence in result.evidence
+    }
+
+    assert "R-COMBO-001" in evidence_by_rule
+
+    combo_evidence = evidence_by_rule["R-COMBO-001"]
+
+    assert combo_evidence.category == "fraud_chain"
+    assert combo_evidence.score == 80
+    assert "冒充公检法" in combo_evidence.tags
+    assert "安全账户" in combo_evidence.tags
+
+
+def test_customer_service_refund_chain_triggers_combo_rule() -> None:
+    """冒充客服，以退款为由索要验证码，应触发组合风险。"""
+
+    result = analyze(
+        "我是平台客服，你的订单出现异常，"
+        "现在给你办理退款，请立即提供短信验证码。"
+    )
+
+    assert result.risk_level == RiskLevel.HIGH
+
+    evidence_by_rule = {
+        evidence.rule_id: evidence
+        for evidence in result.evidence
+    }
+
+    assert "R-COMBO-002" in evidence_by_rule
+
+    combo_evidence = evidence_by_rule["R-COMBO-002"]
+
+    assert combo_evidence.category == "fraud_chain"
+    assert combo_evidence.score == 75
+    assert "冒充客服" in combo_evidence.tags
+    assert "索要验证码" in combo_evidence.tags
+
+
+def test_single_transfer_request_does_not_trigger_combo_rule() -> None:
+    """普通单一转账要求只命中基础规则，不应命中组合规则。"""
+
+    result = analyze("请给对方转账。")
+
+    assert result.risk_level == RiskLevel.MEDIUM
+
+    rule_ids = {
+        evidence.rule_id
+        for evidence in result.evidence
+    }
+
+    assert "R-TEXT-001" in rule_ids
+    assert "R-COMBO-001" not in rule_ids
+    assert "R-COMBO-002" not in rule_ids
+
+
+def test_police_anti_fraud_warning_does_not_trigger_combo_rule() -> None:
+    """警方发布的反诈提醒不应被识别成冒充公安诈骗。"""
+
+    result = analyze(
+        "警方提醒：公检法不会要求群众把钱转入安全账户，"
+        "也不要向陌生人提供验证码。"
+    )
+
+    assert result.risk_level == RiskLevel.LOW
+    assert result.score == 0
+    assert result.evidence == []
