@@ -1,13 +1,18 @@
+from __future__ import annotations
+
 import uuid
 
 from fastapi import (
     APIRouter,
     Depends,
+    File,
     HTTPException,
     Query,
+    UploadFile,
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_db
@@ -19,6 +24,8 @@ from app.repositories.risk import (
     list_risk_events,
 )
 from app.schemas.risk import (
+    ImageRiskAnalysisResponse,
+    OCRTextLineResponse,
     PersistedTextRiskAnalysisResponse,
     RiskEventDetailResponse,
     RiskEventListItem,
@@ -33,6 +40,13 @@ from app.schemas.risk_feedback import (
 )
 from app.schemas.risk_feedback_statistics import (
     RiskFeedbackStatisticsResponse,
+)
+from app.services.ocr_service import (
+    OCRImageTooLargeError,
+    OCRInvalidImageError,
+    OCRNoTextError,
+    OCRService,
+    OCRServiceError,
 )
 from app.services.risk_analyzer import TextRiskAnalyzer
 from app.services.risk_feedback_service import (
@@ -49,15 +63,17 @@ router = APIRouter(
 )
 
 text_risk_analyzer = TextRiskAnalyzer()
+ocr_service = OCRService()
 
 risk_feedback_statistics_service = (
     RiskFeedbackStatisticsService()
 )
 
+
 def event_to_list_item(
     event: RiskEvent,
 ) -> RiskEventListItem:
-    """将数据库事件转换为列表响应。"""
+    """将数据库事件转换为风险历史列表项。"""
 
     return RiskEventListItem(
         event_id=event.id,
@@ -73,7 +89,7 @@ def event_to_list_item(
 def event_to_detail(
     event: RiskEvent,
 ) -> RiskEventDetailResponse:
-    """将数据库事件转换为完整详情响应。"""
+    """将数据库事件转换为风险事件详情。"""
 
     sorted_signals = sorted(
         event.signals,
@@ -91,7 +107,7 @@ def event_to_detail(
             matches=signal.match_positions,
             score=signal.signal_weight,
             explanation=signal.explanation,
-            )
+        )
         for signal in sorted_signals
     ]
 
@@ -135,6 +151,8 @@ async def analyze_text_risk(
         user_id=current_user.id,
         request=request,
         analysis=analysis,
+        source_type="text",
+        source_text=request.text,
     )
 
     return PersistedTextRiskAnalysisResponse(
@@ -144,9 +162,122 @@ async def analyze_text_risk(
     )
 
 
+@router.post(
+    "/image/analyze",
+    response_model=ImageRiskAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="分析聊天截图中的风险",
+    description=(
+        "上传聊天截图，通过 OCR 提取图片中的文字，"
+        "再执行反诈风险分析，并保存风险事件。"
+    ),
+)
+async def analyze_image_risk(
+    image: UploadFile = File(
+        ...,
+        description="聊天截图文件",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ImageRiskAnalysisResponse:
+    """识别聊天截图并执行风险分析。"""
+
+    allowed_content_types = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/bmp",
+    }
+
+    if image.content_type not in allowed_content_types:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+            ),
+            detail=(
+                "仅支持 JPEG、PNG、WEBP 和 BMP 图片。"
+            ),
+        )
+
+    try:
+        image_bytes = await image.read()
+    finally:
+        await image.close()
+
+    try:
+        ocr_result = await run_in_threadpool(
+            ocr_service.extract_text,
+            image_bytes,
+        )
+
+    except OCRImageTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+
+    except OCRInvalidImageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    except OCRNoTextError as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail=str(exc),
+        ) from exc
+
+    except OCRServiceError as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail="OCR 服务暂时无法完成识别。",
+        ) from exc
+
+    text_request = TextRiskAnalysisRequest(
+        text=ocr_result.text,
+    )
+
+    analysis = text_risk_analyzer.analyze(
+        text_request
+    )
+
+    event = await create_risk_event(
+        db,
+        user_id=current_user.id,
+        request=text_request,
+        analysis=analysis,
+        source_type="image",
+        source_text=ocr_result.text,
+    )
+
+    return ImageRiskAnalysisResponse(
+        **analysis.model_dump(),
+        source_type="image",
+        extracted_text=ocr_result.text,
+        image_width=ocr_result.width,
+        image_height=ocr_result.height,
+        ocr_lines=[
+            OCRTextLineResponse(
+                text=line.text,
+                confidence=line.confidence,
+                box=list(line.box),
+            )
+            for line in ocr_result.lines
+        ],
+        event_id=event.id,
+        created_at=event.created_at,
+    )
+
+
 @router.get(
     "/events",
     response_model=RiskEventListResponse,
+    status_code=status.HTTP_200_OK,
     summary="查询风险事件历史",
     description=(
         "分页查询当前登录用户自己的风险分析记录，"
@@ -187,6 +318,7 @@ async def get_risk_events(
         offset=offset,
     )
 
+
 @router.get(
     "/feedback/statistics",
     response_model=RiskFeedbackStatisticsResponse,
@@ -212,9 +344,11 @@ async def get_my_risk_feedback_statistics(
         )
     )
 
+
 @router.get(
     "/events/{event_id}",
     response_model=RiskEventDetailResponse,
+    status_code=status.HTTP_200_OK,
     summary="查询风险事件详情",
     description=(
         "查询当前登录用户自己的一条风险事件，"
@@ -241,6 +375,7 @@ async def get_risk_event_detail(
         )
 
     return event_to_detail(event)
+
 
 @router.put(
     "/events/{event_id}/feedback",
@@ -280,6 +415,7 @@ async def upsert_event_feedback(
     return RiskFeedbackResponse.model_validate(
         feedback
     )
+
 
 @router.get(
     "/events/{event_id}/feedback",
