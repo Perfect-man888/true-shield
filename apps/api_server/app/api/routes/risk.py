@@ -31,11 +31,17 @@ from app.schemas.risk_feedback import (
     RiskFeedbackCreate,
     RiskFeedbackResponse,
 )
+from app.schemas.risk_feedback_statistics import (
+    RiskFeedbackStatisticsResponse,
+)
 from app.services.risk_analyzer import TextRiskAnalyzer
 from app.services.risk_feedback_service import (
     get_owned_risk_event,
     get_risk_feedback,
     upsert_risk_feedback,
+)
+from app.services.risk_feedback_statistics_service import (
+    RiskFeedbackStatisticsService,
 )
 
 router = APIRouter(
@@ -43,6 +49,10 @@ router = APIRouter(
 )
 
 text_risk_analyzer = TextRiskAnalyzer()
+
+risk_feedback_statistics_service = (
+    RiskFeedbackStatisticsService()
+)
 
 def event_to_list_item(
     event: RiskEvent,
@@ -177,6 +187,30 @@ async def get_risk_events(
         offset=offset,
     )
 
+@router.get(
+    "/feedback/statistics",
+    response_model=RiskFeedbackStatisticsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="获取当前用户的风险反馈统计",
+    description=(
+        "统计当前登录用户自己的风险反馈，"
+        "包括反馈类型数量、期望风险等级数量、"
+        "判断准确率和需要纠正的反馈比例。"
+    ),
+)
+async def get_my_risk_feedback_statistics(
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RiskFeedbackStatisticsResponse:
+    """获取当前登录用户自己的风险反馈统计。"""
+
+    return await (
+        risk_feedback_statistics_service
+        .get_user_statistics(
+            session,
+            user_id=current_user.id,
+        )
+    )
 
 @router.get(
     "/events/{event_id}",
