@@ -12,14 +12,22 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import User  # noqa: F401
+from app.models import RiskEvent, RiskSignal, User  # noqa: F401
 
 
 @pytest_asyncio.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
-    """不需要数据库的普通 API 测试客户端。"""
+    """
+    不需要数据库的普通 API 测试客户端。
 
-    transport = ASGITransport(app=app)
+    注意：使用该客户端访问数据库接口时，
+    会连接项目配置中的真实数据库。
+    """
+
+    transport = ASGITransport(
+        app=app,
+        raise_app_exceptions=True,
+    )
 
     async with AsyncClient(
         transport=transport,
@@ -30,12 +38,22 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
 @pytest_asyncio.fixture
 async def db_client() -> AsyncGenerator[AsyncClient, None]:
-    """使用内存数据库的认证接口测试客户端。"""
+    """
+    使用独立内存数据库的 API 测试客户端。
+
+    每个测试都会：
+    1. 创建新的 SQLite 内存数据库；
+    2. 创建所有数据表；
+    3. 覆盖 FastAPI 的 get_db；
+    4. 测试结束后删除表并释放引擎。
+    """
 
     test_engine = create_async_engine(
         "sqlite+aiosqlite://",
         poolclass=StaticPool,
-        connect_args={"check_same_thread": False},
+        connect_args={
+            "check_same_thread": False,
+        },
     )
 
     testing_session_local = async_sessionmaker(
@@ -46,9 +64,12 @@ async def db_client() -> AsyncGenerator[AsyncClient, None]:
     )
 
     async with test_engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(
+            Base.metadata.create_all
+        )
 
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db(
+    ) -> AsyncGenerator[AsyncSession, None]:
         async with testing_session_local() as session:
             try:
                 yield session
@@ -58,7 +79,10 @@ async def db_client() -> AsyncGenerator[AsyncClient, None]:
 
     app.dependency_overrides[get_db] = override_get_db
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(
+        app=app,
+        raise_app_exceptions=True,
+    )
 
     try:
         async with AsyncClient(
@@ -67,9 +91,14 @@ async def db_client() -> AsyncGenerator[AsyncClient, None]:
         ) as async_client:
             yield async_client
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(
+            get_db,
+            None,
+        )
 
         async with test_engine.begin() as connection:
-            await connection.run_sync(Base.metadata.drop_all)
+            await connection.run_sync(
+                Base.metadata.drop_all
+            )
 
         await test_engine.dispose()
