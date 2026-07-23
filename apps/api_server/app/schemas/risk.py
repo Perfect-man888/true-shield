@@ -80,3 +80,33 @@ class PersistedTextRiskAnalysisResponse(
 
     event_id: uuid.UUID
     created_at: datetime
+
+class RiskEventListItem(BaseModel):
+    """风险事件列表中的单条摘要。"""
+
+    event_id: uuid.UUID
+    source_type: str
+    risk_level: RiskLevel
+    score: int = Field(ge=0, le=100)
+    summary: str
+    evidence_count: int = Field(ge=0)
+    created_at: datetime
+
+
+class RiskEventListResponse(BaseModel):
+    """风险事件分页列表。"""
+
+    items: list[RiskEventListItem]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+
+
+class RiskEventDetailResponse(
+    PersistedTextRiskAnalysisResponse
+):
+    """风险事件完整详情。"""
+
+    source_type: str
+    source_text: str
+    summary: str

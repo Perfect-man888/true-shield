@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.risk import RiskEvent, RiskSignal
 from app.schemas.risk import (
@@ -14,7 +16,7 @@ from app.schemas.risk import (
 def build_event_summary(
     analysis: TextRiskAnalysisResponse,
 ) -> str:
-    """根据分析结果生成简短的事件摘要。"""
+    """根据分析结果生成简短事件摘要。"""
 
     if not analysis.evidence:
         return "暂未检测到明显风险信号。"
@@ -67,10 +69,70 @@ async def create_risk_event(
 
     db.add(event)
 
-    # 提交 RiskEvent 与其关联的 RiskSignal。
     await db.commit()
-
-    # 重新从数据库读取，确保 created_at 等服务端字段可用。
     await db.refresh(event)
 
     return event
+
+
+async def list_risk_events(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    limit: int,
+    offset: int,
+) -> tuple[list[RiskEvent], int]:
+    """分页查询当前用户的风险事件。"""
+
+    count_statement = (
+        select(func.count())
+        .select_from(RiskEvent)
+        .where(RiskEvent.user_id == user_id)
+    )
+
+    total_result = await db.execute(count_statement)
+    total = total_result.scalar_one()
+
+    statement = (
+        select(RiskEvent)
+        .where(RiskEvent.user_id == user_id)
+        .options(selectinload(RiskEvent.signals))
+        .order_by(RiskEvent.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    result = await db.execute(statement)
+
+    events = list(
+        result.scalars().unique().all()
+    )
+
+    return events, total
+
+
+async def get_risk_event_by_id(
+    db: AsyncSession,
+    *,
+    event_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> RiskEvent | None:
+    """
+    查询当前用户的一条风险事件。
+
+    同时根据 event_id 和 user_id 查询，
+    从数据库层面防止用户读取其他人的记录。
+    """
+
+    statement = (
+        select(RiskEvent)
+        .where(
+            RiskEvent.id == event_id,
+            RiskEvent.user_id == user_id,
+        )
+        .options(selectinload(RiskEvent.signals))
+    )
+
+    result = await db.execute(statement)
+
+    return result.scalar_one_or_none()
