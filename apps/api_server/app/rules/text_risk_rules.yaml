@@ -1,8 +1,12 @@
-version: "1.0.0"
+version: "1.1.0"
 
 thresholds:
   medium: 25
   high: 60
+
+scoring:
+  mode: highest_per_category
+  max_total: 100
 
 rules:
   - id: R-TEXT-001

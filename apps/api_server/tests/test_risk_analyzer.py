@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.schemas.risk import (
     RiskLevel,
     TextRiskAnalysisRequest,
@@ -94,3 +96,115 @@ def test_security_warning_does_not_trigger_code_rule():
 
     assert "R-TEXT-005" not in rule_ids
     assert result.risk_level == RiskLevel.LOW
+
+def test_disabled_rule_is_not_used(
+    tmp_path: Path,
+) -> None:
+    """enabled=false 的规则不能参与分析。"""
+
+    rules_path = tmp_path / "disabled_rules.yaml"
+
+    rules_path.write_text(
+        """
+version: "test-disabled"
+
+thresholds:
+  medium: 25
+  high: 60
+
+scoring:
+  mode: highest_per_category
+  max_total: 100
+
+rules:
+  - id: TEST-DISABLED-001
+    enabled: false
+    category: payment
+    title: 已停用的转账规则
+    score: 80
+    match:
+      any:
+        - "转账"
+    explanation: 该规则已经停用。
+    advice: 不应返回这条建议。
+""".strip(),
+        encoding="utf-8",
+    )
+
+    test_analyzer = TextRiskAnalyzer(
+        rules_path=rules_path,
+    )
+
+    result = test_analyzer.analyze(
+        TextRiskAnalysisRequest(
+            text="请立即转账。",
+        )
+    )
+
+    assert result.score == 0
+    assert result.risk_level == RiskLevel.LOW
+    assert result.evidence == []
+
+
+def test_same_category_only_uses_highest_score(
+    tmp_path: Path,
+) -> None:
+    """同一类别命中多条规则时只计算最高分。"""
+
+    rules_path = tmp_path / "category_score_rules.yaml"
+
+    rules_path.write_text(
+        """
+version: "test-category-score"
+
+thresholds:
+  medium: 25
+  high: 60
+
+scoring:
+  mode: highest_per_category
+  max_total: 100
+
+rules:
+  - id: TEST-PAYMENT-001
+    enabled: true
+    category: payment
+    title: 普通转账请求
+    score: 25
+    match:
+      any:
+        - "转账"
+    explanation: 出现转账请求。
+    advice: 不要立即转账。
+
+  - id: TEST-PAYMENT-002
+    enabled: true
+    category: payment
+    title: 紧急转账请求
+    score: 40
+    match:
+      all:
+        - "马上"
+        - "转账"
+    explanation: 出现紧急转账请求。
+    advice: 暂停操作并核验身份。
+""".strip(),
+        encoding="utf-8",
+    )
+
+    test_analyzer = TextRiskAnalyzer(
+        rules_path=rules_path,
+    )
+
+    result = test_analyzer.analyze(
+        TextRiskAnalysisRequest(
+            text="马上给我转账。",
+        )
+    )
+
+    assert len(result.evidence) == 2
+
+    # 两条规则属于同一个 payment 类别，
+    # 因此只取最高的 40 分，而不是 25 + 40。
+    assert result.score == 40
+    assert result.risk_level == RiskLevel.MEDIUM

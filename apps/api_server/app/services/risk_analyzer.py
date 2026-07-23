@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -29,6 +29,7 @@ class TextRiskRule(BaseModel):
     """单条文本风险规则。"""
 
     id: str
+    enabled: bool = True
     category: str
     title: str
     score: int = Field(ge=0, le=100)
@@ -45,11 +46,30 @@ class RiskThresholds(BaseModel):
     high: int = Field(default=60, ge=0, le=100)
 
 
+class RiskScoring(BaseModel):
+    """风险分数聚合配置。"""
+
+    mode: Literal[
+        "sum",
+        "highest_per_category",
+    ] = "highest_per_category"
+
+    max_total: int = Field(
+        default=100,
+        ge=1,
+        le=100,
+    )
+
 class TextRuleSet(BaseModel):
     """整个 YAML 规则文件。"""
 
     version: str
     thresholds: RiskThresholds
+
+    scoring: RiskScoring = Field(
+        default_factory=RiskScoring,
+    )
+
     rules: list[TextRiskRule]
 
 
@@ -196,6 +216,45 @@ class TextRiskAnalyzer:
 
         return current
 
+    def _calculate_score(
+        self,
+        matched: list[
+            tuple[TextRiskRule, list[str]]
+        ],
+    ) -> int:
+        """根据规则配置计算最终风险分数。"""
+
+        scoring = self.rule_set.scoring
+
+        if scoring.mode == "sum":
+            raw_score = sum(
+                rule.score
+                for rule, _ in matched
+            )
+
+        else:
+            highest_scores: dict[str, int] = {}
+
+            for rule, _ in matched:
+                previous_score = highest_scores.get(
+                    rule.category,
+                    0,
+                )
+
+                highest_scores[rule.category] = max(
+                    previous_score,
+                    rule.score,
+                )
+
+            raw_score = sum(
+                highest_scores.values()
+            )
+
+        return min(
+            scoring.max_total,
+            raw_score,
+        )
+
     def _score_level(
         self,
         score: int,
@@ -248,6 +307,9 @@ class TextRiskAnalyzer:
         forced_level: RiskLevel | None = None
 
         for rule in self.rule_set.rules:
+            if not rule.enabled:
+                continue
+
             matched_terms = self._match_rule(
                 rule,
                 request,
@@ -271,12 +333,8 @@ class TextRiskAnalyzer:
             reverse=True,
         )
 
-        score = min(
-            100,
-            sum(
-                rule.score
-                for rule, _ in matched
-            ),
+        score = self._calculate_score(
+            matched,
         )
 
         risk_level = self._score_level(
