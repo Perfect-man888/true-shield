@@ -51,6 +51,23 @@ class TextRiskAnalysisRequest(BaseModel):
 
         return cleaned
 
+class RiskTermMatch(BaseModel):
+    """风险词在原始文本中的一次命中位置。"""
+
+    term: str = Field(
+        min_length=1,
+        description="命中的风险词",
+    )
+
+    start: int = Field(
+        ge=0,
+        description="风险词起始字符位置，包含该位置",
+    )
+
+    end: int = Field(
+        ge=0,
+        description="风险词结束字符位置，不包含该位置",
+    )
 
 class RiskEvidence(BaseModel):
     """单条风险证据。"""
@@ -61,6 +78,15 @@ class RiskEvidence(BaseModel):
     matched_terms: list[str]
     score: int = Field(ge=0, le=100)
     explanation: str
+    tags: list[str] = Field(
+        default_factory=list,
+        description="风险标签",
+    )
+
+    matches: list[RiskTermMatch] = Field(
+        default_factory=list,
+        description="风险词在原始文本中的命中位置",
+    )
 
 
 class TextRiskAnalysisResponse(BaseModel):

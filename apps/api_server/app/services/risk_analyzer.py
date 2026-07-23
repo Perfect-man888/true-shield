@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.schemas.risk import (
     RiskEvidence,
     RiskLevel,
+    RiskTermMatch,
     TextRiskAnalysisRequest,
     TextRiskAnalysisResponse,
 )
@@ -31,6 +32,9 @@ class TextRiskRule(BaseModel):
     id: str
     enabled: bool = True
     category: str
+    tags: list[str] = Field(
+        default_factory=list,
+    )
     title: str
     score: int = Field(ge=0, le=100)
     match: RuleMatch
@@ -216,6 +220,73 @@ class TextRiskAnalyzer:
 
         return current
 
+    @staticmethod
+    def _locate_matched_terms(
+        text: str,
+        matched_terms: list[str],
+    ) -> list[RiskTermMatch]:
+        """
+        查找所有命中词在原始文本中的位置。
+
+        start 为包含边界，end 为不包含边界，
+        因此前端可以直接使用 text[start:end]。
+        """
+
+        normalized_text = text.casefold()
+
+        matches: list[RiskTermMatch] = []
+        seen_positions: set[tuple[int, int, str]] = set()
+
+        for original_term in matched_terms:
+            term = original_term.strip()
+
+            if not term:
+                continue
+
+            normalized_term = term.casefold()
+            search_start = 0
+
+            while True:
+                start = normalized_text.find(
+                    normalized_term,
+                    search_start,
+                )
+
+                if start == -1:
+                    break
+
+                end = start + len(term)
+                position_key = (
+                    start,
+                    end,
+                    term,
+                )
+
+                if position_key not in seen_positions:
+                    seen_positions.add(position_key)
+
+                    matches.append(
+                        RiskTermMatch(
+                            term=text[start:end],
+                            start=start,
+                            end=end,
+                        )
+                    )
+
+                # 同一个词继续向后查找，支持一段文本中重复出现。
+                search_start = start + max(
+                    len(term),
+                    1,
+                )
+
+        return sorted(
+            matches,
+            key=lambda item: (
+                item.start,
+                item.end,
+                item.term,
+            ),
+        )
     def _calculate_score(
         self,
         matched: list[
@@ -350,6 +421,11 @@ class TextRiskAnalyzer:
                 matched_terms=matched_terms,
                 score=rule.score,
                 explanation=rule.explanation,
+                tags=rule.tags,
+                matches=self._locate_matched_terms(
+                    request.text,
+                    matched_terms,
+                ),
             )
             for rule, matched_terms in matched
         ]

@@ -10,7 +10,11 @@ scoring:
 
 rules:
   - id: R-TEXT-001
+    enabled: true
     category: payment
+    tags:
+      - 资金请求
+      - 转账付款
     title: 出现转账或借款请求
     score: 25
     match:
@@ -28,6 +32,9 @@ rules:
 
   - id: R-TEXT-002
     category: urgency
+    tags:
+      - 时间压力
+      - 紧急催促
     title: 对方制造时间压力
     score: 15
     match:
@@ -44,6 +51,9 @@ rules:
 
   - id: R-TEXT-003
     category: secrecy
+    tags:
+      - 要求保密
+      - 阻止求助
     title: 对方要求保密
     score: 20
     match:
@@ -58,6 +68,9 @@ rules:
 
   - id: R-TEXT-004
     category: impersonation
+    tags:
+      - 身份冒充
+      - 亲友冒充
     title: 存在身份冒充话术
     score: 20
     match:
@@ -166,6 +179,11 @@ rules:
 
   - id: R-TEXT-012
     category: composite
+    tags:
+      - 复合诈骗
+      - 身份冒充
+      - 紧急转账
+      - 要求保密
     title: 冒充身份并紧急要求秘密转账
     score: 50
     force_level: high

@@ -61,9 +61,14 @@ async def create_risk_event(
             signal_type=evidence.category,
             title=evidence.title,
             matched_terms=evidence.matched_terms,
+            tags=evidence.tags,
+            match_positions=[
+                match.model_dump()
+                for match in evidence.matches
+                ],
             signal_weight=evidence.score,
             explanation=evidence.explanation,
-        )
+                )
         for evidence in analysis.evidence
     ]
 

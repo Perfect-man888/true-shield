@@ -208,3 +208,40 @@ rules:
     # 因此只取最高的 40 分，而不是 25 + 40。
     assert result.score == 40
     assert result.risk_level == RiskLevel.MEDIUM
+
+def test_risk_evidence_contains_term_positions() -> None:
+    """风险证据应包含准确的原文字符位置。"""
+
+    text = (
+        "请马上转账，"
+        "但是不要告诉家里人，"
+        "稍后还要再次转账。"
+    )
+
+    result = TextRiskAnalyzer().analyze(
+        TextRiskAnalysisRequest(
+            text=text,
+        )
+    )
+
+    payment_evidence = next(
+        evidence
+        for evidence in result.evidence
+        if evidence.rule_id == "R-TEXT-001"
+    )
+
+    transfer_matches = [
+        match
+        for match in payment_evidence.matches
+        if match.term == "转账"
+    ]
+
+    assert len(transfer_matches) == 2
+
+    for match in payment_evidence.matches:
+        assert (
+            text[match.start:match.end]
+            == match.term
+        )
+
+    assert "资金请求" in payment_evidence.tags

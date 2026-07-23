@@ -69,9 +69,11 @@ def event_to_detail(
             category=signal.signal_type,
             title=signal.title,
             matched_terms=signal.matched_terms,
+            tags=signal.tags,
+            matches=signal.match_positions,
             score=signal.signal_weight,
             explanation=signal.explanation,
-        )
+            )
         for signal in sorted_signals
     ]
 

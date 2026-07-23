@@ -235,6 +235,28 @@ async def test_user_can_read_own_risk_event(
     assert len(detail["evidence"]) >= 2
     assert len(detail["actions"]) >= 3
 
+    evidence_with_positions = [
+        evidence
+        for evidence in detail["evidence"]
+        if evidence["matches"]
+    ]
+
+    assert evidence_with_positions
+
+    for evidence in evidence_with_positions:
+        for match in evidence["matches"]:
+            assert (
+                source_text[
+                    match["start"]:match["end"]
+                ]
+                == match["term"]
+            )
+
+    assert any(
+        evidence["tags"]
+        for evidence in detail["evidence"]
+    )
+
 
 async def test_user_cannot_read_another_users_event(
     db_client: AsyncClient,

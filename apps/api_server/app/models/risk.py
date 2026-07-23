@@ -156,6 +156,20 @@ class RiskSignal(Base):
         default=list,
     )
 
+    tags: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    match_positions: Mapped[
+        list[dict[str, object]]
+    ] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
     signal_weight: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
