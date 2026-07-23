@@ -27,14 +27,22 @@ from app.schemas.risk import (
     RiskLevel,
     TextRiskAnalysisRequest,
 )
+from app.schemas.risk_feedback import (
+    RiskFeedbackCreate,
+    RiskFeedbackResponse,
+)
 from app.services.risk_analyzer import TextRiskAnalyzer
+from app.services.risk_feedback_service import (
+    get_owned_risk_event,
+    get_risk_feedback,
+    upsert_risk_feedback,
+)
 
 router = APIRouter(
     prefix="/risk",
 )
 
 text_risk_analyzer = TextRiskAnalyzer()
-
 
 def event_to_list_item(
     event: RiskEvent,
@@ -199,3 +207,83 @@ async def get_risk_event_detail(
         )
 
     return event_to_detail(event)
+
+@router.put(
+    "/events/{event_id}/feedback",
+    response_model=RiskFeedbackResponse,
+    status_code=status.HTTP_200_OK,
+    summary="提交或更新风险反馈",
+)
+async def upsert_event_feedback(
+    event_id: uuid.UUID,
+    payload: RiskFeedbackCreate,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RiskFeedbackResponse:
+    """
+    当前用户对自己的风险事件提交反馈。
+
+    同一个用户对同一个风险事件再次提交时，
+    更新原来的反馈记录，不会创建重复记录。
+    """
+
+    feedback = await upsert_risk_feedback(
+        session,
+        event_id=event_id,
+        user_id=current_user.id,
+        payload=payload,
+    )
+
+    if feedback is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="风险事件不存在或无权访问。",
+        )
+
+    await session.commit()
+    await session.refresh(feedback)
+
+    return RiskFeedbackResponse.model_validate(
+        feedback
+    )
+
+@router.get(
+    "/events/{event_id}/feedback",
+    response_model=RiskFeedbackResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查询风险反馈",
+)
+async def read_event_feedback(
+    event_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RiskFeedbackResponse:
+    """查询当前用户对指定风险事件提交的反馈。"""
+
+    risk_event = await get_owned_risk_event(
+        session,
+        event_id=event_id,
+        user_id=current_user.id,
+    )
+
+    if risk_event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="风险事件不存在或无权访问。",
+        )
+
+    feedback = await get_risk_feedback(
+        session,
+        event_id=event_id,
+        user_id=current_user.id,
+    )
+
+    if feedback is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="当前风险事件尚未提交反馈。",
+        )
+
+    return RiskFeedbackResponse.model_validate(
+        feedback
+    )
