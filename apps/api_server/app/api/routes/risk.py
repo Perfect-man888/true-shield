@@ -19,6 +19,7 @@ from app.db.session import get_db
 from app.models.risk import RiskEvent
 from app.models.user import User
 from app.repositories.risk import (
+    build_event_summary,
     create_risk_event,
     get_risk_event_by_id,
     list_risk_events,
@@ -42,6 +43,11 @@ from app.schemas.risk_feedback import (
 from app.schemas.risk_feedback_statistics import (
     RiskFeedbackStatisticsResponse,
 )
+from app.schemas.risk_reanalysis import (
+    CorrectedRiskReanalysisResponse,
+    RiskAnalysisComparisonResponse,
+    RiskReanalysisSnapshotResponse,
+)
 from app.services.ocr_service import (
     OCRImageTooLargeError,
     OCRInvalidImageError,
@@ -59,6 +65,9 @@ from app.services.risk_feedback_service import (
 )
 from app.services.risk_feedback_statistics_service import (
     RiskFeedbackStatisticsService,
+)
+from app.services.risk_reanalysis_service import (
+    compare_risk_analyses,
 )
 
 router = APIRouter(
@@ -477,4 +486,147 @@ async def read_event_feedback(
 
     return RiskFeedbackResponse.model_validate(
         feedback
+    )
+
+@router.post(
+    "/events/{event_id}/reanalyze-corrected",
+    response_model=CorrectedRiskReanalysisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="使用人工修正文本重新分析风险",
+    description=(
+        "读取当前用户为图片风险事件提交的 "
+        "corrected_text，重新执行风险分析，"
+        "并返回修正前后的结果差异。"
+        "本操作不会覆盖原始风险事件。"
+    ),
+)
+async def reanalyze_corrected_ocr_text(
+    event_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CorrectedRiskReanalysisResponse:
+    """使用人工修正的 OCR 文本重新分析风险。"""
+
+    event = await get_risk_event_by_id(
+        db,
+        event_id=event_id,
+        user_id=current_user.id,
+    )
+
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="风险事件不存在或无权访问。",
+        )
+
+    if event.source_type != "image":
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail=(
+                "只有图片风险事件可以使用 "
+                "OCR 修正文本重新分析。"
+            ),
+        )
+
+    feedback = await get_risk_feedback(
+        db,
+        event_id=event_id,
+        user_id=current_user.id,
+    )
+
+    if feedback is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="当前风险事件尚未提交反馈。",
+        )
+
+    if not feedback.corrected_text:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail=(
+                "当前反馈中没有可用于重新分析的 "
+                "corrected_text。"
+            ),
+        )
+
+    if not event.source_text:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail="原始 OCR 文本不存在。",
+        )
+
+    # 从数据库事件恢复原始分析结果。
+    original_detail = event_to_detail(event)
+
+    corrected_request = TextRiskAnalysisRequest(
+        text=feedback.corrected_text,
+    )
+
+    corrected_analysis = text_risk_analyzer.analyze(
+        corrected_request
+    )
+
+    comparison = compare_risk_analyses(
+        original_detail,
+        corrected_analysis,
+    )
+
+    return CorrectedRiskReanalysisResponse(
+        event_id=event.id,
+        source_type="image",
+        original_text=event.source_text,
+        corrected_text=feedback.corrected_text,
+        original_analysis=(
+            RiskReanalysisSnapshotResponse(
+                risk_level=original_detail.risk_level,
+                score=original_detail.score,
+                summary=original_detail.summary,
+                evidence=original_detail.evidence,
+                actions=original_detail.actions,
+            )
+        ),
+        corrected_analysis=(
+            RiskReanalysisSnapshotResponse(
+                risk_level=corrected_analysis.risk_level,
+                score=corrected_analysis.score,
+                summary=build_event_summary(
+                    corrected_analysis
+                ),
+                evidence=corrected_analysis.evidence,
+                actions=corrected_analysis.actions,
+            )
+        ),
+        comparison=RiskAnalysisComparisonResponse(
+            original_risk_level=(
+                comparison.original_risk_level
+            ),
+            corrected_risk_level=(
+                comparison.corrected_risk_level
+            ),
+            original_score=(
+                comparison.original_score
+            ),
+            corrected_score=(
+                comparison.corrected_score
+            ),
+            score_delta=comparison.score_delta,
+            risk_level_changed=(
+                comparison.risk_level_changed
+            ),
+            added_rule_ids=list(
+                comparison.added_rule_ids
+            ),
+            removed_rule_ids=list(
+                comparison.removed_rule_ids
+            ),
+            retained_rule_ids=list(
+                comparison.retained_rule_ids
+            ),
+        ),
     )
