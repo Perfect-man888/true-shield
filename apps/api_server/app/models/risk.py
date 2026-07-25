@@ -5,6 +5,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -257,6 +258,20 @@ class RiskFeedback(Base):
     comment: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+
+    ocr_text_accurate: Mapped[bool | None] = (
+        mapped_column(
+            Boolean,
+            nullable=True,
+        )
+    )
+
+    corrected_text: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
     )
 
     created_at: Mapped[datetime] = mapped_column(

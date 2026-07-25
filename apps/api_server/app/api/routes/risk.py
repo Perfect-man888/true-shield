@@ -52,6 +52,7 @@ from app.services.ocr_service import (
 )
 from app.services.risk_analyzer import TextRiskAnalyzer
 from app.services.risk_feedback_service import (
+    OCRFeedbackNotAllowedError,
     get_owned_risk_event,
     get_risk_feedback,
     upsert_risk_feedback,
@@ -222,7 +223,7 @@ async def analyze_image_risk(
 
     except OCRNoTextError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -408,12 +409,21 @@ async def upsert_event_feedback(
     更新原来的反馈记录，不会创建重复记录。
     """
 
-    feedback = await upsert_risk_feedback(
-        session,
-        event_id=event_id,
-        user_id=current_user.id,
-        payload=payload,
-    )
+    try:
+        feedback = await upsert_risk_feedback(
+            session,
+            event_id=event_id,
+            user_id=current_user.id,
+            payload=payload,
+        )
+
+    except OCRFeedbackNotAllowedError as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail=str(exc),
+        ) from exc
 
     if feedback is None:
         raise HTTPException(
@@ -427,7 +437,6 @@ async def upsert_event_feedback(
     return RiskFeedbackResponse.model_validate(
         feedback
     )
-
 
 @router.get(
     "/events/{event_id}/feedback",

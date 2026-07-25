@@ -37,6 +37,70 @@ class RiskFeedbackCreate(BaseModel):
         max_length=1000,
     )
 
+    ocr_text_accurate: bool | None = Field(
+        default=None,
+        description="用户是否确认 OCR 文字识别准确",
+    )
+
+    corrected_text: str | None = Field(
+        default=None,
+        max_length=10000,
+        description="用户人工修正后的 OCR 完整文字",
+    )
+
+    @field_validator("corrected_text")
+    @classmethod
+    def normalize_corrected_text(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        """去除纠错文本首尾空白并拒绝空字符串。"""
+
+        if value is None:
+            return None
+
+        normalized = value.strip()
+
+        if not normalized:
+            raise ValueError(
+                "corrected_text 不能为空字符串。"
+            )
+
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_ocr_correction(
+        self,
+    ) -> RiskFeedbackCreate:
+        """校验 OCR 准确性与纠错文本之间的关系。"""
+
+        if (
+            self.ocr_text_accurate is False
+            and self.corrected_text is None
+        ):
+            raise ValueError(
+                "OCR 识别不准确时必须提供 corrected_text。"
+            )
+
+        if (
+            self.ocr_text_accurate is True
+            and self.corrected_text is not None
+        ):
+            raise ValueError(
+                "OCR 识别准确时不应提供 corrected_text。"
+            )
+
+        if (
+            self.ocr_text_accurate is None
+            and self.corrected_text is not None
+        ):
+            raise ValueError(
+                "提供 corrected_text 时必须明确 "
+                "ocr_text_accurate=false。"
+            )
+
+        return self
+
     @field_validator("comment")
     @classmethod
     def normalize_comment(
@@ -117,6 +181,9 @@ class RiskFeedbackResponse(BaseModel):
     expected_risk_level: RiskLevel | None
 
     comment: str | None
+
+    ocr_text_accurate: bool | None = None
+    corrected_text: str | None = None
 
     created_at: datetime
     updated_at: datetime
