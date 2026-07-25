@@ -11,6 +11,10 @@ from app.schemas.risk import (
     TextRiskAnalysisRequest,
     TextRiskAnalysisResponse,
 )
+from app.schemas.risk_url import (
+    URLRiskAnalysisRequest,
+    URLRiskAnalysisResponse,
+)
 
 
 def build_event_summary(
@@ -80,6 +84,53 @@ async def create_risk_event(
             explanation=evidence.explanation,
         )
         for evidence in analysis.evidence
+    ]
+
+    db.add(event)
+
+    await db.commit()
+    await db.refresh(event)
+
+    return event
+
+async def create_url_risk_event(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    request: URLRiskAnalysisRequest,
+    analysis: URLRiskAnalysisResponse,
+) -> RiskEvent:
+    """保存 URL 风险分析事件及其风险信号。"""
+
+    event = RiskEvent(
+        user_id=user_id,
+        source_type="url",
+        source_text=request.url,
+        risk_level=analysis.risk_level.value,
+        risk_score=analysis.score,
+        summary=analysis.summary,
+        actions=analysis.actions,
+        disclaimer=analysis.disclaimer,
+        rule_version=analysis.rule_version,
+    )
+
+    event.signals = [
+        RiskSignal(
+            rule_id=signal.signal_id,
+            signal_type=signal.category,
+            title=signal.title,
+            matched_terms=list(
+                signal.details.get(
+                    "matched_terms",
+                    [],
+                )
+            ),
+            tags=[],
+            match_positions=[],
+            signal_weight=signal.score,
+            explanation=signal.explanation,
+        )
+        for signal in analysis.signals
     ]
 
     db.add(event)

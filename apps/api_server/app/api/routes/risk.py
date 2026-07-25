@@ -21,6 +21,7 @@ from app.models.user import User
 from app.repositories.risk import (
     build_event_summary,
     create_risk_event,
+    create_url_risk_event,
     get_risk_event_by_id,
     list_risk_events,
 )
@@ -48,6 +49,10 @@ from app.schemas.risk_reanalysis import (
     RiskAnalysisComparisonResponse,
     RiskReanalysisSnapshotResponse,
 )
+from app.schemas.risk_url import (
+    PersistedURLRiskAnalysisResponse,
+    URLRiskAnalysisRequest,
+)
 from app.services.ocr_service import (
     OCRImageTooLargeError,
     OCRInvalidImageError,
@@ -69,12 +74,16 @@ from app.services.risk_feedback_statistics_service import (
 from app.services.risk_reanalysis_service import (
     compare_risk_analyses,
 )
+from app.services.url_risk_analyzer import (
+    URLRiskAnalyzer,
+)
 
 router = APIRouter(
     prefix="/risk",
 )
 
 text_risk_analyzer = TextRiskAnalyzer()
+url_risk_analyzer = URLRiskAnalyzer()
 ocr_service = OCRService()
 
 risk_feedback_statistics_service = (
@@ -294,6 +303,50 @@ async def analyze_image_risk(
         ),
         event_id=event.id,
         created_at=event.created_at,
+    )
+
+@router.post(
+    "/url/analyze",
+    response_model=PersistedURLRiskAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="分析并保存可疑链接",
+    description=(
+        "根据链接协议、域名、端口、敏感词、"
+        "短网址和混淆结构等特征分析 URL 风险，"
+        "并将分析结果保存到当前用户的风险历史。"
+    ),
+)
+async def analyze_url_risk(
+    request: URLRiskAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PersistedURLRiskAnalysisResponse:
+    """分析 URL 并保存风险事件。"""
+
+    try:
+        analysis = url_risk_analyzer.analyze(
+            request
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail=str(exc),
+        ) from exc
+
+    event = await create_url_risk_event(
+        db,
+        user_id=current_user.id,
+        request=request,
+        analysis=analysis,
+    )
+
+    return PersistedURLRiskAnalysisResponse(
+        **analysis.model_dump(),
+        event_id=event.id,
+        created_at=event.created_at,
+        source_type="url",
     )
 
 @router.get(
