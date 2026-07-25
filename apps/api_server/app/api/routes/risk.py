@@ -25,6 +25,7 @@ from app.repositories.risk import (
 )
 from app.schemas.risk import (
     ImageRiskAnalysisResponse,
+    OCRQualityResponse,
     OCRTextLineResponse,
     PersistedTextRiskAnalysisResponse,
     RiskEventDetailResponse,
@@ -47,6 +48,7 @@ from app.services.ocr_service import (
     OCRNoTextError,
     OCRService,
     OCRServiceError,
+    evaluate_ocr_quality,
 )
 from app.services.risk_analyzer import TextRiskAnalyzer
 from app.services.risk_feedback_service import (
@@ -191,12 +193,8 @@ async def analyze_image_risk(
 
     if image.content_type not in allowed_content_types:
         raise HTTPException(
-            status_code=(
-                status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-            ),
-            detail=(
-                "仅支持 JPEG、PNG、WEBP 和 BMP 图片。"
-            ),
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="仅支持 JPEG、PNG、WEBP 和 BMP 图片。",
         )
 
     try:
@@ -212,7 +210,7 @@ async def analyze_image_risk(
 
     except OCRImageTooLargeError as exc:
         raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            status_code=413,
             detail=str(exc),
         ) from exc
 
@@ -224,19 +222,21 @@ async def analyze_image_risk(
 
     except OCRNoTextError as exc:
         raise HTTPException(
-            status_code=(
-                status.HTTP_422_UNPROCESSABLE_CONTENT
-            ),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
 
     except OCRServiceError as exc:
         raise HTTPException(
-            status_code=(
-                status.HTTP_500_INTERNAL_SERVER_ERROR
-            ),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="OCR 服务暂时无法完成识别。",
         ) from exc
+
+    # 注意：必须放在全部 except 结束之后。
+    # 运行到这里，说明 ocr_result 已经成功生成。
+    ocr_quality = evaluate_ocr_quality(
+        ocr_result
+    )
 
     text_request = TextRiskAnalysisRequest(
         text=ocr_result.text,
@@ -269,10 +269,22 @@ async def analyze_image_risk(
             )
             for line in ocr_result.lines
         ],
+        ocr_quality=OCRQualityResponse(
+            line_count=ocr_quality.line_count,
+            average_confidence=(
+                ocr_quality.average_confidence
+            ),
+            minimum_confidence=(
+                ocr_quality.minimum_confidence
+            ),
+            needs_manual_review=(
+                ocr_quality.needs_manual_review
+            ),
+            review_reason=ocr_quality.review_reason,
+        ),
         event_id=event.id,
         created_at=event.created_at,
     )
-
 
 @router.get(
     "/events",

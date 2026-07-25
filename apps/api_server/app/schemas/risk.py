@@ -157,6 +157,34 @@ class OCRTextLineResponse(BaseModel):
         description="文字在原始图片中的坐标",
     )
 
+class OCRQualityResponse(BaseModel):
+    """OCR 识别质量评估响应。"""
+
+    line_count: int = Field(
+        ge=0,
+        description="OCR 识别出的有效文字行数",
+    )
+
+    average_confidence: float = Field(
+        ge=0,
+        le=1,
+        description="所有有效文字行的平均置信度",
+    )
+
+    minimum_confidence: float = Field(
+        ge=0,
+        le=1,
+        description="有效文字行中的最低置信度",
+    )
+
+    needs_manual_review: bool = Field(
+        description="是否建议用户对照原图人工核对",
+    )
+
+    review_reason: str | None = Field(
+        default=None,
+        description="建议人工核对的原因",
+    )
 
 class ImageRiskAnalysisResponse(
     PersistedTextRiskAnalysisResponse
@@ -183,4 +211,8 @@ class ImageRiskAnalysisResponse(
     ocr_lines: list[OCRTextLineResponse] = Field(
         default_factory=list,
         description="OCR 逐行识别结果",
+    )
+
+    ocr_quality: OCRQualityResponse = Field(
+        description="OCR 识别质量评估结果",
     )

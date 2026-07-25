@@ -170,6 +170,14 @@ async def test_user_can_analyze_chat_image(
 
     assert len(body["ocr_lines"]) == 2
 
+    assert body["ocr_quality"] == {
+        "line_count": 2,
+        "average_confidence": 0.97,
+        "minimum_confidence": 0.96,
+        "needs_manual_review": False,
+        "review_reason": None,
+    }
+
     assert body["ocr_lines"][0]["text"] == (
         "我是公安局工作人员"
     )
@@ -353,3 +361,92 @@ async def test_image_analysis_rejects_large_image(
     assert response.json()["detail"] == (
         "图片文件过大。"
     )
+
+async def test_image_analysis_marks_low_quality_ocr_for_review(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """低质量 OCR 结果应提示用户人工核对。"""
+
+    headers = await register_and_login(
+        client,
+        name="LowQualityOCRUser",
+    )
+
+    fake_result = OCRExtractionResult(
+        text=(
+            "我是公安局工作人员\n"
+            "请马上把钱转到安全账户"
+        ),
+        lines=(
+            OCRTextLine(
+                text="我是公安局工作人员",
+                confidence=0.95,
+                box=(
+                    (10, 10),
+                    (260, 10),
+                    (260, 40),
+                    (10, 40),
+                ),
+            ),
+            OCRTextLine(
+                text="请马上把钱转到安全账户",
+                confidence=0.55,
+                box=(
+                    (10, 50),
+                    (290, 50),
+                    (290, 90),
+                    (10, 90),
+                ),
+            ),
+        ),
+        width=300,
+        height=200,
+    )
+
+    def fake_extract_text(
+        image_bytes: bytes,
+    ) -> OCRExtractionResult:
+        assert image_bytes
+        return fake_result
+
+    monkeypatch.setattr(
+        risk_routes.ocr_service,
+        "extract_text",
+        fake_extract_text,
+    )
+
+    response = await client.post(
+        "/api/v1/risk/image/analyze",
+        headers=headers,
+        files={
+            "image": (
+                "low-quality.png",
+                create_png_bytes(),
+                "image/png",
+            ),
+        },
+    )
+
+    assert response.status_code == 200, response.text
+
+    body = response.json()
+    quality = body["ocr_quality"]
+
+    assert quality["line_count"] == 2
+    assert quality["average_confidence"] == 0.75
+    assert quality["minimum_confidence"] == 0.55
+    assert quality["needs_manual_review"] is True
+
+    assert quality["review_reason"] is not None
+    assert "平均识别置信度较低" in (
+        quality["review_reason"]
+    )
+    assert "部分文字行识别置信度过低" in (
+        quality["review_reason"]
+    )
+
+    # 即使 OCR 质量较低，也仍然返回风险分析结果。
+    assert body["risk_level"] == "high"
+    assert body["score"] > 0
+    assert body["event_id"]

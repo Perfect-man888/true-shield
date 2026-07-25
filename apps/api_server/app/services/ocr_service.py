@@ -69,6 +69,18 @@ class OCRExtractionResult:
     width: int
     height: int
 
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class OCRQualityResult:
+    """OCR 识别质量评估结果。"""
+
+    line_count: int
+    average_confidence: float
+    minimum_confidence: float
+    needs_manual_review: bool
+    review_reason: str | None
 
 class OCRService:
     """聊天截图 OCR 识别服务。"""
@@ -294,3 +306,87 @@ class OCRService:
             return ()
 
         return tuple(points)
+
+def evaluate_ocr_quality(
+    result: OCRExtractionResult,
+    *,
+    average_threshold: float = 0.80,
+    minimum_threshold: float = 0.60,
+) -> OCRQualityResult:
+    """
+    根据 OCR 每行置信度评估识别质量。
+
+    average_threshold:
+        平均置信度低于该值时建议人工核对。
+
+    minimum_threshold:
+        任意一行置信度低于该值时建议人工核对。
+    """
+
+    if not 0 <= average_threshold <= 1:
+        raise ValueError(
+            "average_threshold 必须位于 0 到 1 之间。"
+        )
+
+    if not 0 <= minimum_threshold <= 1:
+        raise ValueError(
+            "minimum_threshold 必须位于 0 到 1 之间。"
+        )
+
+    if not result.lines:
+        return OCRQualityResult(
+            line_count=0,
+            average_confidence=0.0,
+            minimum_confidence=0.0,
+            needs_manual_review=True,
+            review_reason="图片中没有可用于评估的文字行。",
+        )
+
+    confidences = [
+        max(
+            0.0,
+            min(
+                1.0,
+                float(line.confidence),
+            ),
+        )
+        for line in result.lines
+    ]
+
+    average_confidence = round(
+        sum(confidences) / len(confidences),
+        4,
+    )
+
+    minimum_confidence = round(
+        min(confidences),
+        4,
+    )
+
+    review_reasons: list[str] = []
+
+    if average_confidence < average_threshold:
+        review_reasons.append(
+            "OCR 平均识别置信度较低"
+        )
+
+    if minimum_confidence < minimum_threshold:
+        review_reasons.append(
+            "部分文字行识别置信度过低"
+        )
+
+    needs_manual_review = bool(review_reasons)
+
+    review_reason = (
+        "；".join(review_reasons) + "，建议对照原图核对文字。"
+        if review_reasons
+        else None
+    )
+
+    return OCRQualityResult(
+        line_count=len(result.lines),
+        average_confidence=average_confidence,
+        minimum_confidence=minimum_confidence,
+        needs_manual_review=needs_manual_review,
+        review_reason=review_reason,
+    )
