@@ -51,6 +51,7 @@ from app.schemas.risk_reanalysis import (
 )
 from app.schemas.risk_url import (
     PersistedURLRiskAnalysisResponse,
+    URLRedirectInspection,
     URLRiskAnalysisRequest,
 )
 from app.services.ocr_service import (
@@ -74,6 +75,14 @@ from app.services.risk_feedback_statistics_service import (
 from app.services.risk_reanalysis_service import (
     compare_risk_analyses,
 )
+from app.services.url_redirect_resolver import (
+    UnsafeURLTargetError,
+    URLRedirectResolutionError,
+    URLRedirectResolver,
+)
+from app.services.url_redirect_risk_service import (
+    enrich_url_analysis_with_redirects,
+)
 from app.services.url_risk_analyzer import (
     URLRiskAnalyzer,
 )
@@ -84,6 +93,7 @@ router = APIRouter(
 
 text_risk_analyzer = TextRiskAnalyzer()
 url_risk_analyzer = URLRiskAnalyzer()
+url_redirect_resolver = URLRedirectResolver()
 ocr_service = OCRService()
 
 risk_feedback_statistics_service = (
@@ -312,8 +322,9 @@ async def analyze_image_risk(
     summary="分析并保存可疑链接",
     description=(
         "根据链接协议、域名、端口、敏感词、"
-        "短网址和混淆结构等特征分析 URL 风险，"
-        "并将分析结果保存到当前用户的风险历史。"
+        "短网址和混淆结构等特征分析 URL 风险。"
+        "当 resolve_redirects=true 时，"
+        "还会安全解析重定向链。"
     ),
 )
 async def analyze_url_risk(
@@ -335,6 +346,58 @@ async def analyze_url_risk(
             detail=str(exc),
         ) from exc
 
+    redirect_inspection = URLRedirectInspection(
+        requested=request.resolve_redirects,
+        status="not_requested",
+        resolution=None,
+        message=None,
+    )
+
+    if request.resolve_redirects:
+        try:
+            resolution = (
+                await url_redirect_resolver.resolve(
+                    analysis.normalized_url
+                )
+            )
+
+        except UnsafeURLTargetError as exc:
+            redirect_inspection = (
+                URLRedirectInspection(
+                    requested=True,
+                    status="blocked",
+                    resolution=None,
+                    message=str(exc),
+                )
+            )
+
+        except URLRedirectResolutionError as exc:
+            redirect_inspection = (
+                URLRedirectInspection(
+                    requested=True,
+                    status="failed",
+                    resolution=None,
+                    message=str(exc),
+                )
+            )
+
+        else:
+            analysis = (
+                enrich_url_analysis_with_redirects(
+                    analysis,
+                    resolution,
+                )
+            )
+
+            redirect_inspection = (
+                URLRedirectInspection(
+                    requested=True,
+                    status="completed",
+                    resolution=resolution,
+                    message=None,
+                )
+            )
+
     event = await create_url_risk_event(
         db,
         user_id=current_user.id,
@@ -347,6 +410,9 @@ async def analyze_url_risk(
         event_id=event.id,
         created_at=event.created_at,
         source_type="url",
+        redirect_inspection=(
+            redirect_inspection
+        ),
     )
 
 @router.get(

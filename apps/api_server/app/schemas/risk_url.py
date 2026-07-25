@@ -11,6 +11,9 @@ from pydantic import (
 )
 
 from app.schemas.risk import RiskLevel
+from app.schemas.url_redirect import (
+    URLRedirectResolutionResponse,
+)
 
 
 class URLRiskAnalysisRequest(BaseModel):
@@ -20,6 +23,14 @@ class URLRiskAnalysisRequest(BaseModel):
         min_length=1,
         max_length=2048,
         description="需要分析的网站链接",
+    )
+
+    resolve_redirects: bool = Field(
+        default=False,
+        description=(
+            "是否实际访问链接并安全解析重定向链。"
+            "默认关闭，避免不必要的外部网络访问。"
+        ),
     )
 
     @field_validator("url")
@@ -90,6 +101,25 @@ class URLRiskAnalysisResponse(BaseModel):
     rule_version: str
 
 
+class URLRedirectInspection(BaseModel):
+    """URL 外部网络与重定向链检查状态。"""
+
+    requested: bool
+
+    status: Literal[
+        "not_requested",
+        "completed",
+        "blocked",
+        "failed",
+    ]
+
+    resolution: (
+        URLRedirectResolutionResponse | None
+    ) = None
+
+    message: str | None = None
+
+
 class PersistedURLRiskAnalysisResponse(
     URLRiskAnalysisResponse
 ):
@@ -100,3 +130,5 @@ class PersistedURLRiskAnalysisResponse(
     created_at: datetime
 
     source_type: Literal["url"] = "url"
+
+    redirect_inspection: URLRedirectInspection
