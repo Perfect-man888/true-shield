@@ -12,6 +12,7 @@ from app.schemas.risk import (
     TextRiskAnalysisResponse,
 )
 from app.schemas.risk_url import (
+    URLRedirectInspection,
     URLRiskAnalysisRequest,
     URLRiskAnalysisResponse,
 )
@@ -99,13 +100,28 @@ async def create_url_risk_event(
     user_id: uuid.UUID,
     request: URLRiskAnalysisRequest,
     analysis: URLRiskAnalysisResponse,
+    redirect_inspection: URLRedirectInspection,
 ) -> RiskEvent:
-    """保存 URL 风险分析事件及其风险信号。"""
+    """保存 URL 风险分析及重定向检查结果。"""
 
     event = RiskEvent(
         user_id=user_id,
         source_type="url",
         source_text=request.url,
+        source_metadata={
+            "url": {
+                "original_url": request.url,
+                "normalized_url": (
+                    analysis.normalized_url
+                ),
+                "host": analysis.host,
+                "redirect_inspection": (
+                    redirect_inspection.model_dump(
+                        mode="json"
+                    )
+                ),
+            },
+        },
         risk_level=analysis.risk_level.value,
         risk_score=analysis.score,
         summary=analysis.summary,
@@ -139,6 +155,7 @@ async def create_url_risk_event(
     await db.refresh(event)
 
     return event
+
 
 async def list_risk_events(
     db: AsyncSession,

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -136,6 +136,7 @@ class RiskEventDetailResponse(
 
     source_type: str
     source_text: str
+    source_metadata: dict[str, Any] | None = None
     summary: str
 
 class OCRTextLineResponse(BaseModel):

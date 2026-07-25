@@ -189,6 +189,43 @@ async def test_url_analysis_can_include_redirect_chain(
     assert "URL-013" in detail_rule_ids
     assert "URL-014" in detail_rule_ids
 
+    detail_body = detail_response.json()
+
+    source_metadata = detail_body[
+        "source_metadata"
+    ]
+
+    assert source_metadata is not None
+
+    url_metadata = source_metadata["url"]
+
+    assert url_metadata["original_url"] == (
+        "https://example.com/start"
+    )
+
+    assert url_metadata["normalized_url"] == (
+        "https://example.com/start"
+    )
+
+    inspection_metadata = url_metadata[
+        "redirect_inspection"
+    ]
+
+    assert inspection_metadata["requested"] is True
+    assert inspection_metadata["status"] == "completed"
+
+    resolution_metadata = inspection_metadata[
+        "resolution"
+    ]
+
+    assert resolution_metadata["redirect_count"] == 2
+
+    assert resolution_metadata["final_url"] == (
+        "https://final.example/home"
+    )
+
+    assert len(resolution_metadata["hops"]) == 3
+
 
 async def test_blocked_redirect_still_returns_local_analysis(
     client: AsyncClient,
@@ -243,3 +280,80 @@ async def test_blocked_redirect_still_returns_local_analysis(
         "不允许访问"
         in inspection["message"]
     )
+
+    event_id = body["event_id"]
+
+    detail_response = await client.get(
+        f"/api/v1/risk/events/{event_id}",
+        headers=headers,
+    )
+
+    assert detail_response.status_code == 200
+
+    detail_body = detail_response.json()
+
+    inspection_metadata = (
+        detail_body["source_metadata"]
+        ["url"]
+        ["redirect_inspection"]
+    )
+
+    assert inspection_metadata["requested"] is True
+    assert inspection_metadata["status"] == "blocked"
+    assert inspection_metadata["resolution"] is None
+
+    assert (
+        "不允许访问"
+        in inspection_metadata["message"]
+    )
+
+async def test_not_requested_redirect_status_is_persisted(
+    client: AsyncClient,
+) -> None:
+    """未请求重定向解析时也应保存检查状态。"""
+
+    headers = await register_and_login(
+        client,
+        name="NoRedirectRequestUser",
+    )
+
+    response = await client.post(
+        "/api/v1/risk/url/analyze",
+        headers=headers,
+        json={
+            "url": "https://example.com/news",
+            "resolve_redirects": False,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+
+    event_id = response.json()["event_id"]
+
+    detail_response = await client.get(
+        f"/api/v1/risk/events/{event_id}",
+        headers=headers,
+    )
+
+    assert detail_response.status_code == 200
+
+    detail_body = detail_response.json()
+
+    url_metadata = (
+        detail_body["source_metadata"]["url"]
+    )
+
+    assert url_metadata["normalized_url"] == (
+        "https://example.com/news"
+    )
+
+    inspection = url_metadata[
+        "redirect_inspection"
+    ]
+
+    assert inspection == {
+        "requested": False,
+        "status": "not_requested",
+        "resolution": None,
+        "message": None,
+    }

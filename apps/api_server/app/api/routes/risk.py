@@ -145,6 +145,7 @@ def event_to_detail(
     return RiskEventDetailResponse(
         event_id=event.id,
         created_at=event.created_at,
+        source_metadata=event.source_metadata,
         source_type=event.source_type,
         source_text=event.source_text,
         summary=event.summary,
@@ -403,6 +404,7 @@ async def analyze_url_risk(
         user_id=current_user.id,
         request=request,
         analysis=analysis,
+        redirect_inspection=redirect_inspection,
     )
 
     return PersistedURLRiskAnalysisResponse(
