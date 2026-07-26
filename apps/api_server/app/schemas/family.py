@@ -111,3 +111,68 @@ class FamilyMemberResponse(BaseModel):
     created_at: datetime
 
     updated_at: datetime
+
+class MyFamilyItem(BaseModel):
+    """当前用户加入的家庭组。"""
+
+    id: uuid.UUID
+
+    name: str
+
+    owner_user_id: uuid.UUID
+
+    status: FamilyStatus
+
+    my_role: FamilyRole
+
+    created_at: datetime
+
+    updated_at: datetime
+
+
+class MyFamilyListResponse(BaseModel):
+    """当前用户的家庭组列表。"""
+
+    items: list[MyFamilyItem] = Field(
+        default_factory=list,
+    )
+
+    total: int = Field(
+        ge=0,
+    )
+
+
+class FamilyMemberListItem(BaseModel):
+    """家庭成员列表项。"""
+
+    id: uuid.UUID
+
+    family_id: uuid.UUID
+
+    user_id: uuid.UUID
+
+    display_name: str
+
+    email: str
+
+    phone: str | None = None
+
+    role: FamilyRole
+
+    status: FamilyMemberStatus
+
+    joined_at: datetime
+
+
+class FamilyMemberListResponse(BaseModel):
+    """家庭成员列表响应。"""
+
+    family_id: uuid.UUID
+
+    items: list[FamilyMemberListItem] = Field(
+        default_factory=list,
+    )
+
+    total: int = Field(
+        ge=0,
+    )
