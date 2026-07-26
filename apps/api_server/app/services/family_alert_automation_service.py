@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Final
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.family_alert_policy import (
     FamilyAlertPolicy,
 )
 from app.models.risk import RiskEvent
+from app.repositories.family_alert_automation import (
+    list_active_family_ids_for_user,
+)
+from app.repositories.family_alert_policy import (
+    get_or_create_family_alert_policy,
+)
 
 RISK_LEVEL_RANK: Final[dict[str, int]] = {
     "low": 1,
@@ -139,4 +148,117 @@ def evaluate_family_alert_policy(
             policy.auto_dispatch_enabled
         ),
         reason="policy_matched",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class FamilyAlertAutomationPlanItem:
+    """单个家庭的自动告警执行计划。"""
+
+    family_id: uuid.UUID
+
+    should_create: bool
+
+    should_dispatch: bool
+
+    reason: str
+
+    max_recipients: int
+
+
+@dataclass(frozen=True, slots=True)
+class FamilyAlertAutomationPlan:
+    """一个风险事件对应的全部家庭执行计划。"""
+
+    event_id: uuid.UUID
+
+    subject_user_id: uuid.UUID
+
+    items: tuple[
+        FamilyAlertAutomationPlanItem,
+        ...,
+    ]
+
+    @property
+    def family_count(self) -> int:
+        """参与策略判断的家庭数量。"""
+
+        return len(self.items)
+
+    @property
+    def matched_count(self) -> int:
+        """符合自动创建条件的家庭数量。"""
+
+        return sum(
+            1
+            for item in self.items
+            if item.should_create
+        )
+
+    @property
+    def dispatch_count(self) -> int:
+        """符合自动发送条件的家庭数量。"""
+
+        return sum(
+            1
+            for item in self.items
+            if item.should_dispatch
+        )
+
+
+async def build_family_alert_automation_plan(
+    db: AsyncSession,
+    *,
+    event: RiskEvent,
+) -> FamilyAlertAutomationPlan:
+    """
+    为一个风险事件生成家庭告警自动化计划。
+
+    此函数只负责决策，不创建告警，也不发送消息。
+    """
+
+    family_ids = (
+        await list_active_family_ids_for_user(
+            db,
+            user_id=event.user_id,
+        )
+    )
+
+    plan_items: list[
+        FamilyAlertAutomationPlanItem
+    ] = []
+
+    for family_id in family_ids:
+        policy = (
+            await get_or_create_family_alert_policy(
+                db,
+                family_id=family_id,
+            )
+        )
+
+        decision = evaluate_family_alert_policy(
+            policy=policy,
+            event=event,
+        )
+
+        plan_items.append(
+            FamilyAlertAutomationPlanItem(
+                family_id=family_id,
+                should_create=(
+                    decision.should_create
+                ),
+                should_dispatch=(
+                    decision.should_dispatch
+                ),
+                reason=decision.reason,
+                max_recipients=(
+                    policy.max_recipients
+                ),
+            )
+        )
+
+    return FamilyAlertAutomationPlan(
+        event_id=event.id,
+        subject_user_id=event.user_id,
+        items=tuple(plan_items),
     )
