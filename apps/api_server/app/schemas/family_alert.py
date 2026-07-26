@@ -112,3 +112,16 @@ class FamilyAlertResponse(BaseModel):
     ] = Field(
         default_factory=list,
     )
+
+class FamilyAlertListResponse(BaseModel):
+    """家庭风险告警列表响应。"""
+
+    family_id: uuid.UUID
+
+    items: list[FamilyAlertResponse] = Field(
+        default_factory=list,
+    )
+
+    total: int = Field(
+        ge=0,
+    )

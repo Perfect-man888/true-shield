@@ -1,0 +1,278 @@
+from __future__ import annotations
+
+import uuid
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+)
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.dependencies import get_current_user
+from app.db.session import get_db
+from app.models.user import User
+from app.repositories.family import (
+    get_active_family_membership,
+)
+from app.repositories.family_alert import (
+    create_family_alert,
+    get_existing_family_alert,
+    get_family_alert_by_id,
+    get_risk_event_for_family_alert,
+    list_eligible_trusted_contacts,
+    list_family_alerts,
+)
+from app.schemas.family_alert import (
+    FamilyAlertListResponse,
+    FamilyAlertResponse,
+)
+from app.services.family_alert_service import (
+    build_alert_recipients,
+    build_family_alert_summary,
+    build_family_alert_title,
+)
+
+router = APIRouter(
+    prefix="/families",
+    tags=["family-alerts"],
+)
+
+
+async def require_family_membership(
+    db: AsyncSession,
+    *,
+    family_id: uuid.UUID,
+    user_id: uuid.UUID,
+):
+    """确认用户是家庭有效成员。"""
+
+    membership = (
+        await get_active_family_membership(
+            db,
+            family_id=family_id,
+            user_id=user_id,
+        )
+    )
+
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="家庭不存在或无权访问。",
+        )
+
+    return membership
+
+
+@router.post(
+    (
+        "/{family_id}/alerts/"
+        "from-events/{event_id}"
+    ),
+    response_model=FamilyAlertResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="根据高风险事件生成家庭告警",
+)
+async def create_alert_from_risk_event(
+    family_id: uuid.UUID,
+    event_id: uuid.UUID,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FamilyAlertResponse:
+    """根据高风险事件创建家庭告警。"""
+
+    current_membership = (
+        await require_family_membership(
+            db,
+            family_id=family_id,
+            user_id=current_user.id,
+        )
+    )
+
+    event = await get_risk_event_for_family_alert(
+        db,
+        event_id=event_id,
+    )
+
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="风险事件不存在。",
+        )
+
+    subject_membership = (
+        await get_active_family_membership(
+            db,
+            family_id=family_id,
+            user_id=event.user_id,
+        )
+    )
+
+    if subject_membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "风险事件所属用户"
+                "不是该家庭的有效成员。"
+            ),
+        )
+
+    if (
+        event.user_id != current_user.id
+        and current_membership.role
+        not in {"owner", "admin"}
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "普通家庭成员只能为自己的"
+                "风险事件生成家庭告警。"
+            ),
+        )
+
+    if event.risk_level != "high":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "只有 high 风险事件"
+                "可以生成家庭告警。"
+            ),
+        )
+
+    existing_alert = (
+        await get_existing_family_alert(
+            db,
+            family_id=family_id,
+            risk_event_id=event.id,
+        )
+    )
+
+    if existing_alert is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "该风险事件已经生成过家庭告警。"
+            ),
+        )
+
+    contacts = (
+        await list_eligible_trusted_contacts(
+            db,
+            family_id=family_id,
+            subject_user_id=event.user_id,
+        )
+    )
+
+    recipient_data = build_alert_recipients(
+        contacts
+    )
+
+    try:
+        alert = await create_family_alert(
+            db,
+            family_id=family_id,
+            risk_event_id=event.id,
+            subject_user_id=event.user_id,
+            risk_level=event.risk_level,
+            title=build_family_alert_title(
+                event
+            ),
+            summary=build_family_alert_summary(
+                event
+            ),
+            recipients=recipient_data,
+        )
+    except IntegrityError as exc:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "该风险事件已经生成过家庭告警。"
+            ),
+        ) from exc
+
+    return FamilyAlertResponse.model_validate(
+        alert
+    )
+
+
+@router.get(
+    "/{family_id}/alerts",
+    response_model=FamilyAlertListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查询家庭告警列表",
+)
+async def get_family_alert_list(
+    family_id: uuid.UUID,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FamilyAlertListResponse:
+    """查询当前家庭的风险告警。"""
+
+    await require_family_membership(
+        db,
+        family_id=family_id,
+        user_id=current_user.id,
+    )
+
+    alerts = await list_family_alerts(
+        db,
+        family_id=family_id,
+    )
+
+    return FamilyAlertListResponse(
+        family_id=family_id,
+        items=[
+            FamilyAlertResponse.model_validate(
+                alert
+            )
+            for alert in alerts
+        ],
+        total=len(alerts),
+    )
+
+
+@router.get(
+    "/{family_id}/alerts/{alert_id}",
+    response_model=FamilyAlertResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查询家庭告警详情",
+)
+async def get_family_alert_detail(
+    family_id: uuid.UUID,
+    alert_id: uuid.UUID,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FamilyAlertResponse:
+    """查询家庭告警及其接收人。"""
+
+    await require_family_membership(
+        db,
+        family_id=family_id,
+        user_id=current_user.id,
+    )
+
+    alert = await get_family_alert_by_id(
+        db,
+        family_id=family_id,
+        alert_id=alert_id,
+    )
+
+    if alert is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="家庭告警不存在。",
+        )
+
+    return FamilyAlertResponse.model_validate(
+        alert
+    )
