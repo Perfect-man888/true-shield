@@ -7,8 +7,10 @@ from enum import Enum
 from pydantic import (
     BaseModel,
     ConfigDict,
+    EmailStr,
     Field,
     field_validator,
+    model_validator,
 )
 
 
@@ -176,3 +178,82 @@ class FamilyMemberListResponse(BaseModel):
     total: int = Field(
         ge=0,
     )
+
+class FamilyInvitationStatus(str, Enum):
+    """家庭邀请状态。"""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class FamilyInvitationCreate(BaseModel):
+    """创建家庭邀请。"""
+
+    invitee_email: EmailStr = Field(
+        description="被邀请人的注册邮箱",
+    )
+
+    role: FamilyRole = Field(
+        default=FamilyRole.MEMBER,
+        description="被邀请人加入后的家庭角色",
+    )
+
+    @field_validator(
+        "invitee_email",
+        mode="before",
+    )
+    @classmethod
+    def normalize_invitee_email(
+        cls,
+        value: object,
+    ) -> object:
+        """清理并统一邮箱格式。"""
+
+        if not isinstance(value, str):
+            return value
+
+        return value.strip().lower()
+
+    @model_validator(mode="after")
+    def reject_owner_role(
+        self,
+    ) -> FamilyInvitationCreate:
+        """邀请时不能直接授予所有者角色。"""
+
+        if self.role == FamilyRole.OWNER:
+            raise ValueError(
+                "不能通过邀请授予 owner 角色。"
+            )
+
+        return self
+
+
+class FamilyInvitationResponse(BaseModel):
+    """家庭邀请响应。"""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+    id: uuid.UUID
+
+    family_id: uuid.UUID
+
+    inviter_user_id: uuid.UUID
+
+    invitee_email: EmailStr
+
+    role: FamilyRole
+
+    status: FamilyInvitationStatus
+
+    expires_at: datetime
+
+    responded_at: datetime | None
+
+    created_at: datetime
+
+    updated_at: datetime

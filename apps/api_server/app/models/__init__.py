@@ -1,5 +1,6 @@
 from app.models.family import (
     Family,
+    FamilyInvitation,
     FamilyMember,
 )
 from app.models.risk import (
@@ -16,4 +17,5 @@ __all__ = [
     "RiskFeedback",
     "Family",
     "FamilyMember",
+    "FamilyInvitation",
 ]
