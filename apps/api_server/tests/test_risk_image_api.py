@@ -161,7 +161,57 @@ async def test_user_can_analyze_chat_image(
 
     assert response.status_code == 200, response.text
 
+
+
     body = response.json()
+
+    event_id = body["event_id"]
+
+    detail_response = await client.get(
+        f"/api/v1/risk/events/{event_id}",
+        headers=headers,
+    )
+
+    assert detail_response.status_code == 200, (
+        detail_response.text
+    )
+
+    detail_body = detail_response.json()
+
+    assert detail_body["source_type"] == "image"
+
+    source_metadata = detail_body[
+        "source_metadata"
+    ]
+
+    assert source_metadata is not None
+
+    image_metadata = source_metadata["image"]
+
+    assert image_metadata["image_width"] == (
+        body["image_width"]
+    )
+
+    assert image_metadata["image_height"] == (
+        body["image_height"]
+    )
+
+    assert image_metadata["extracted_text"] == (
+        body["extracted_text"]
+    )
+
+    assert image_metadata["ocr_lines"] == (
+        body["ocr_lines"]
+    )
+
+    assert image_metadata["ocr_quality"] == (
+        body["ocr_quality"]
+    )
+
+    assert image_metadata["content_type"] == (
+        "image/png"
+    )
+    
 
     assert body["source_type"] == "image"
     assert body["extracted_text"] == extracted_text

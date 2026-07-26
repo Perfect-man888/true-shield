@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +48,7 @@ async def create_risk_event(
     analysis: TextRiskAnalysisResponse,
     source_type: str = "text",
     source_text: str | None = None,
+    source_metadata: dict[str, Any] | None = None,
 ) -> RiskEvent:
     """保存一次风险分析事件及其全部证据。"""
 
@@ -58,6 +60,7 @@ async def create_risk_event(
             if source_text is None
             else source_text
         ),
+        source_metadata=source_metadata,
         risk_level=analysis.risk_level.value,
         risk_score=analysis.score,
 

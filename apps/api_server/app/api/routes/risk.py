@@ -11,6 +11,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -276,6 +277,20 @@ async def analyze_image_risk(
         text_request
     )
 
+    image_source_metadata = {
+        "image": jsonable_encoder(
+            {
+                "filename": image.filename,
+                "content_type": image.content_type,
+                "image_width": ocr_result.width,
+                "image_height": ocr_result.height,
+                "extracted_text": ocr_result.text,
+                "ocr_lines": ocr_result.lines,
+                "ocr_quality": ocr_quality,
+            }
+        ),
+    }
+
     event = await create_risk_event(
         db,
         user_id=current_user.id,
@@ -283,6 +298,7 @@ async def analyze_image_risk(
         analysis=analysis,
         source_type="image",
         source_text=ocr_result.text,
+        source_metadata=image_source_metadata,
     )
 
     return ImageRiskAnalysisResponse(
