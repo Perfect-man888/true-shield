@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from app.models.family_alert import (
@@ -100,6 +100,9 @@ class AlertDispatchSummary:
     failed_count: int = 0
     skipped_count: int = 0
     already_completed_count: int = 0
+    attempted_recipient_ids: list[
+        uuid.UUID
+    ] = field(default_factory=list)
 
 
 def apply_simulated_alert_delivery(
@@ -226,6 +229,10 @@ async def deliver_family_alert_notifications(
             continue
 
         summary.attempted_count += 1
+
+        summary.attempted_recipient_ids.append(
+            recipient.id
+        )
 
         pending_recipients.append(recipient)
 

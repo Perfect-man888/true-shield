@@ -25,6 +25,7 @@ from app.repositories.family_alert import (
     get_risk_event_for_family_alert,
     list_eligible_trusted_contacts,
     list_family_alerts,
+    record_family_alert_delivery_attempts,
     resolve_family_alert,
     save_family_alert_delivery_state,
 )
@@ -534,6 +535,15 @@ async def dispatch_family_alert(
                 requested_failure_ids
             ),
         )
+    )
+
+    await record_family_alert_delivery_attempts(
+        db,
+        recipients=alert.recipients,
+        attempted_recipient_ids=set(
+            dispatch_summary
+            .attempted_recipient_ids
+        ),
     )
 
     updated_alert = (

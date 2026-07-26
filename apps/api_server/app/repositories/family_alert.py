@@ -3,12 +3,13 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.family_alert import (
     FamilyAlert,
+    FamilyAlertDeliveryAttempt,
     FamilyAlertRecipient,
 )
 from app.models.risk import RiskEvent
@@ -294,3 +295,77 @@ async def save_family_alert_delivery_state(
         db,
         alert_id=alert_id,
     )
+
+async def record_family_alert_delivery_attempts(
+    db: AsyncSession,
+    *,
+    recipients: list[FamilyAlertRecipient],
+    attempted_recipient_ids: set[uuid.UUID],
+) -> list[FamilyAlertDeliveryAttempt]:
+    """
+    保存本次家庭告警通知发送尝试。
+
+    只记录本次真正尝试发送的接收人，
+    已经发送或已跳过的接收人不会重复记录。
+    """
+
+    if not attempted_recipient_ids:
+        return []
+
+    attempts: list[
+        FamilyAlertDeliveryAttempt
+    ] = []
+
+    for recipient in recipients:
+        if (
+            recipient.id
+            not in attempted_recipient_ids
+        ):
+            continue
+
+        statement = select(
+            func.coalesce(
+                func.max(
+                    FamilyAlertDeliveryAttempt
+                    .attempt_number
+                ),
+                0,
+            )
+        ).where(
+            FamilyAlertDeliveryAttempt
+            .recipient_id
+            == recipient.id
+        )
+
+        result = await db.execute(statement)
+
+        previous_attempt_number = (
+            result.scalar_one()
+        )
+
+        attempt = FamilyAlertDeliveryAttempt(
+            recipient_id=recipient.id,
+            attempt_number=(
+                previous_attempt_number + 1
+            ),
+            channel=recipient.channel,
+            destination=recipient.destination,
+            provider=(
+                recipient.delivery_provider
+                or "none"
+            ),
+            status=recipient.delivery_status,
+            external_message_id=(
+                recipient.external_message_id
+            ),
+            failure_reason=(
+                recipient.failure_reason
+            ),
+        )
+
+        db.add(attempt)
+        attempts.append(attempt)
+
+    await db.flush()
+
+    return attempts

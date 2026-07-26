@@ -201,6 +201,18 @@ async def test_execution_dispatches_alert(
     ):
         return None
 
+    async def fake_record_delivery_attempts(
+        db,
+        *,
+        recipients,
+        attempted_recipient_ids,
+    ):
+        assert attempted_recipient_ids == {
+            recipient.id
+            for recipient in recipients
+        }
+
+        return []
     async def fake_list_contacts(
         db,
         *,
@@ -243,11 +255,15 @@ async def test_execution_dispatches_alert(
             recipient.delivery_status = "sent"
 
         return SimpleNamespace(
-            attempted_count=1,
-            sent_count=1,
+            attempted_count=len(recipients),
+            sent_count=len(recipients),
             failed_count=0,
             skipped_count=0,
             already_completed_count=0,
+            attempted_recipient_ids=[
+                recipient.id
+                for recipient in recipients
+            ],
         )
     async def fake_save_delivery(
         db,
@@ -295,6 +311,11 @@ async def test_execution_dispatches_alert(
         service,
         "build_family_alert_summary",
         lambda event: event.summary,
+    )
+    monkeypatch.setattr(
+    service,
+    "record_family_alert_delivery_attempts",
+    fake_record_delivery_attempts,
     )
 
     result = await (

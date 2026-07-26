@@ -15,6 +15,7 @@ from app.repositories.family_alert import (
     create_family_alert,
     get_existing_family_alert,
     list_eligible_trusted_contacts,
+    record_family_alert_delivery_attempts,
     save_family_alert_delivery_state,
 )
 from app.repositories.family_alert_automation import (
@@ -460,11 +461,22 @@ async def execute_family_alert_automation_plan(
         dispatched = False
 
         if plan_item.should_dispatch:
-            await deliver_family_alert_notifications(
-                alert.recipients,
-                title=alert_title,
-                message=alert_summary,
-                simulated_failure_recipient_ids=set(),
+            dispatch_summary = (
+                await deliver_family_alert_notifications(
+                    alert.recipients,
+                    title=alert_title,
+                    message=alert_summary,
+                    simulated_failure_recipient_ids=set(),
+                )
+            )
+
+            await record_family_alert_delivery_attempts(
+                db,
+                recipients=alert.recipients,
+                attempted_recipient_ids=set(
+                    dispatch_summary
+                    .attempted_recipient_ids
+                ),
             )
 
             alert = (
