@@ -12,6 +12,7 @@ DeliveryStatus = Literal[
 
 
 SUPPORTED_SIMULATED_CHANNELS: Final[set[str]] = {
+    "in_app",
     "sms",
     "phone",
     "email",
@@ -27,7 +28,7 @@ class NotificationDeliveryRequest:
 
     channel: str
 
-    destination: str
+    destination: str | None
 
     title: str
 
@@ -42,7 +43,7 @@ class NotificationDeliveryResult:
 
     channel: str
 
-    destination: str
+    destination: str | None
 
     status: DeliveryStatus
 
@@ -178,25 +179,27 @@ class NotificationDeliveryService:
             request.channel.strip().lower()
         )
 
-        normalized_request = (
-            NotificationDeliveryRequest(
-                recipient_id=request.recipient_id,
-                channel=normalized_channel,
-                destination=(
-                    request.destination.strip()
-                ),
-                title=request.title,
-                message=request.message,
-            )
+        normalized_destination = (
+            request.destination.strip()
+            if request.destination
+            else None
         )
 
-        if not normalized_request.destination:
+        normalized_request = NotificationDeliveryRequest(
+            recipient_id=request.recipient_id,
+            channel=normalized_channel,
+            destination=normalized_destination,
+            title=request.title,
+            message=request.message,
+        )
+
+        if (normalized_channel != "in_app"and not normalized_request.destination):
             return NotificationDeliveryResult(
                 recipient_id=(
                     normalized_request.recipient_id
                 ),
                 channel=normalized_channel,
-                destination="",
+                destination="None",
                 status="skipped",
                 provider="none",
                 failure_reason=(

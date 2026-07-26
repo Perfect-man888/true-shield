@@ -24,10 +24,10 @@ from app.repositories.family_alert_policy import (
     get_or_create_family_alert_policy,
 )
 from app.services.family_alert_service import (
-    apply_simulated_alert_delivery,
     build_alert_recipients,
     build_family_alert_summary,
     build_family_alert_title,
+    deliver_family_alert_notifications,
 )
 
 logger = logging.getLogger(__name__)
@@ -436,6 +436,14 @@ async def execute_family_alert_automation_plan(
             )
             continue
 
+        alert_title = build_family_alert_title(
+            event
+        )
+
+        alert_summary = build_family_alert_summary(
+            event
+        )
+
         alert = await create_family_alert(
             db,
             family_id=plan_item.family_id,
@@ -444,23 +452,19 @@ async def execute_family_alert_automation_plan(
             risk_level=normalize_enum_or_string(
                 event.risk_level
             ),
-            title=build_family_alert_title(
-                event
-            ),
-            summary=build_family_alert_summary(
-                event
-            ),
+            title=alert_title,
+            summary=alert_summary,
             recipients=recipient_payloads,
         )
 
         dispatched = False
 
         if plan_item.should_dispatch:
-            apply_simulated_alert_delivery(
+            await deliver_family_alert_notifications(
                 alert.recipients,
-                simulated_failure_recipient_ids=(
-                    set()
-                ),
+                title=alert_title,
+                message=alert_summary,
+                simulated_failure_recipient_ids=set(),
             )
 
             alert = (

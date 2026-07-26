@@ -9,6 +9,12 @@ from app.models.family_alert import (
 )
 from app.models.risk import RiskEvent
 from app.models.trusted_contact import TrustedContact
+from app.services.notification_delivery import (
+    NotificationDeliveryRequest,
+    NotificationDeliveryService,
+    NotificationProvider,
+    SimulatedNotificationProvider,
+)
 
 SOURCE_TYPE_LABELS = {
     "text": "文本",
@@ -162,5 +168,139 @@ def apply_simulated_alert_delivery(
         recipient.sent_at = now
 
         summary.sent_count += 1
+
+    return summary
+
+async def deliver_family_alert_notifications(
+    recipients: list[FamilyAlertRecipient],
+    *,
+    title: str,
+    message: str,
+    simulated_failure_recipient_ids: (
+        set[uuid.UUID] | None
+    ) = None,
+    providers: list[NotificationProvider] | None = None,
+) -> AlertDispatchSummary:
+    """
+    通过统一通知服务发送家庭告警。
+
+    已发送或已跳过的接收人不会重复发送；
+    failed 和 pending 状态可以再次尝试。
+    """
+
+    failure_ids = (
+        simulated_failure_recipient_ids
+        or set()
+    )
+
+    delivery_service = NotificationDeliveryService(
+        providers=(
+            providers
+            if providers is not None
+            else [
+                SimulatedNotificationProvider(
+                    failed_recipient_ids=(
+                        failure_ids
+                    ),
+                )
+            ]
+        ),
+    )
+
+    summary = AlertDispatchSummary()
+
+    pending_recipients: list[
+        FamilyAlertRecipient
+    ] = []
+
+    requests: list[
+        NotificationDeliveryRequest
+    ] = []
+
+    for recipient in recipients:
+        if recipient.delivery_status in {
+            "sent",
+            "skipped",
+        }:
+            summary.already_completed_count += 1
+            continue
+
+        summary.attempted_count += 1
+
+        pending_recipients.append(recipient)
+
+        requests.append(
+            NotificationDeliveryRequest(
+                recipient_id=recipient.id,
+                channel=recipient.channel,
+                destination=recipient.destination,
+                title=title,
+                message=message,
+            )
+        )
+
+    results = await delivery_service.deliver_many(
+        requests
+    )
+
+    now = datetime.now(UTC)
+
+    for recipient, result in zip(
+        pending_recipients,
+        results,
+        strict=True,
+    ):
+        if result.status == "sent":
+            recipient.delivery_status = "sent"
+            recipient.failure_reason = None
+            recipient.sent_at = now
+
+            summary.sent_count += 1
+            continue
+
+        if result.status == "failed":
+            recipient.delivery_status = "failed"
+            recipient.sent_at = None
+
+            if (
+                result.failure_reason
+                == "simulated_delivery_failure"
+            ):
+                recipient.failure_reason = (
+                    "模拟发送失败。"
+                )
+            else:
+                recipient.failure_reason = (
+                    result.failure_reason
+                    or "通知发送失败。"
+                )
+
+            summary.failed_count += 1
+            continue
+
+        recipient.delivery_status = "skipped"
+        recipient.sent_at = None
+
+        if (
+            result.failure_reason
+            == "missing_destination"
+        ):
+            recipient.failure_reason = (
+                "缺少该发送渠道需要的接收地址。"
+            )
+        elif (
+            result.failure_reason
+            == "no_provider_for_channel"
+        ):
+            recipient.failure_reason = (
+                "没有可用的通知发送服务商。"
+            )
+        else:
+            recipient.failure_reason = (
+                result.failure_reason
+                or "通知发送已跳过。"
+            )
+
+        summary.skipped_count += 1
 
     return summary

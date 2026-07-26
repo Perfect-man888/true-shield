@@ -225,14 +225,19 @@ async def test_execution_dispatches_alert(
 
     delivery_called = False
 
-    def fake_apply_delivery(
+    async def fake_deliver_notifications(
         recipients,
         *,
+        title,
+        message,
         simulated_failure_recipient_ids,
     ):
         nonlocal delivery_called
 
         delivery_called = True
+
+        assert title == "自动风险告警"
+        assert message == event.summary
 
         for recipient in recipients:
             recipient.delivery_status = "sent"
@@ -244,7 +249,6 @@ async def test_execution_dispatches_alert(
             skipped_count=0,
             already_completed_count=0,
         )
-
     async def fake_save_delivery(
         db,
         *,
@@ -274,8 +278,8 @@ async def test_execution_dispatches_alert(
     )
     monkeypatch.setattr(
         service,
-        "apply_simulated_alert_delivery",
-        fake_apply_delivery,
+        "deliver_family_alert_notifications",
+        fake_deliver_notifications,
     )
     monkeypatch.setattr(
         service,

@@ -44,10 +44,10 @@ from app.schemas.family_alert_policy import (
     FamilyAlertPolicyUpdate,
 )
 from app.services.family_alert_service import (
-    apply_simulated_alert_delivery,
     build_alert_recipients,
     build_family_alert_summary,
     build_family_alert_title,
+    deliver_family_alert_notifications,
 )
 
 router = APIRouter(
@@ -526,8 +526,10 @@ async def dispatch_family_alert(
         )
 
     dispatch_summary = (
-        apply_simulated_alert_delivery(
+        await deliver_family_alert_notifications(
             alert.recipients,
+            title=alert.title,
+            message=alert.summary,
             simulated_failure_recipient_ids=(
                 requested_failure_ids
             ),
