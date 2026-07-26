@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -341,4 +342,131 @@ class FamilyAlertRecipient(Base):
 
     alert: Mapped[FamilyAlert] = relationship(
         back_populates="recipients",
+    )
+
+    delivery_attempts: Mapped[
+    list[FamilyAlertDeliveryAttempt]
+    ] = relationship(
+    back_populates="recipient",
+    cascade="all, delete-orphan",
+    order_by=(
+        "FamilyAlertDeliveryAttempt.attempt_number"
+      ),
+    )
+
+class FamilyAlertDeliveryAttempt(Base):
+    """家庭告警接收人的单次通知发送记录。"""
+
+    __tablename__ = (
+        "family_alert_delivery_attempts"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "attempt_number >= 1",
+            name=(
+                "ck_family_alert_delivery_attempts_"
+                "attempt_number"
+            ),
+        ),
+        CheckConstraint(
+            (
+                "status IN "
+                "('sent', 'failed', 'skipped')"
+            ),
+            name=(
+                "ck_family_alert_delivery_attempts_"
+                "status"
+            ),
+        ),
+        UniqueConstraint(
+            "recipient_id",
+            "attempt_number",
+            name=(
+                "uq_family_alert_delivery_attempts_"
+                "recipient_number"
+            ),
+        ),
+        Index(
+            (
+                "ix_family_alert_delivery_attempts_"
+                "recipient_time"
+            ),
+            "recipient_id",
+            "attempted_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    recipient_id: Mapped[
+        uuid.UUID
+    ] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "family_alert_recipients.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    attempt_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    channel: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    destination: Mapped[
+        str | None
+    ] = mapped_column(
+        String(320),
+        nullable=True,
+    )
+
+    provider: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
+
+    external_message_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    failure_reason: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    attempted_at: Mapped[
+        datetime
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    recipient: Mapped[
+        FamilyAlertRecipient
+    ] = relationship(
+        back_populates="delivery_attempts",
     )
