@@ -219,3 +219,146 @@ class TrustedContactResponse(BaseModel):
     created_at: datetime
 
     updated_at: datetime
+
+class TrustedContactUpdate(BaseModel):
+    """修改可信联系人。"""
+
+    display_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+    )
+
+    relationship_label: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=50,
+    )
+
+    phone: str | None = Field(
+        default=None,
+        max_length=32,
+    )
+
+    email: EmailStr | None = None
+
+    preferred_channel: (
+        TrustedContactChannel | None
+    ) = None
+
+    priority: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+    )
+
+    can_receive_alerts: bool | None = None
+
+    @field_validator(
+        "display_name",
+        "relationship_label",
+        mode="before",
+    )
+    @classmethod
+    def normalize_update_text(
+        cls,
+        value: object,
+    ) -> object:
+        """清理修改后的名称和关系。"""
+
+        if value is None:
+            return None
+
+        if not isinstance(value, str):
+            return value
+
+        return " ".join(
+            value.strip().split()
+        )
+
+    @field_validator(
+        "phone",
+        mode="before",
+    )
+    @classmethod
+    def normalize_update_phone(
+        cls,
+        value: object,
+    ) -> object:
+        """清理修改后的电话号码。"""
+
+        if value is None:
+            return None
+
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip()
+
+        return normalized or None
+
+    @field_validator(
+        "email",
+        mode="before",
+    )
+    @classmethod
+    def normalize_update_email(
+        cls,
+        value: object,
+    ) -> object:
+        """清理并统一修改后的邮箱。"""
+
+        if value is None:
+            return None
+
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip().lower()
+
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_update_fields(
+        self,
+    ) -> TrustedContactUpdate:
+        """更新请求至少需要包含一个字段。"""
+
+        if not self.model_fields_set:
+            raise ValueError(
+                "至少需要提供一个要修改的字段。"
+            )
+
+        required_fields = {
+            "display_name",
+            "relationship_label",
+            "priority",
+            "can_receive_alerts",
+        }
+
+        for field_name in required_fields:
+            if (
+                field_name in self.model_fields_set
+                and getattr(self, field_name) is None
+            ):
+                raise ValueError(
+                    f"{field_name} 不能设置为 null。"
+                )
+
+        return self
+
+
+class TrustedContactListResponse(BaseModel):
+    """可信联系人列表。"""
+
+    family_id: uuid.UUID
+
+    subject_user_id: uuid.UUID
+
+    items: list[TrustedContactResponse] = Field(
+        default_factory=list,
+    )
+
+    total: int = Field(
+        ge=0,
+    )
