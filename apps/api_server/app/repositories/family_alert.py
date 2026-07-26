@@ -278,3 +278,19 @@ async def resolve_family_alert(
         db,
         alert_id=alert_id,
     )
+
+async def save_family_alert_delivery_state(
+    db: AsyncSession,
+    *,
+    alert: FamilyAlert,
+) -> FamilyAlert:
+    """保存告警接收人的发送状态。"""
+
+    alert_id = alert.id
+
+    await db.commit()
+
+    return await reload_family_alert(
+        db,
+        alert_id=alert_id,
+    )

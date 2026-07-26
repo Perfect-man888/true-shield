@@ -26,13 +26,17 @@ from app.repositories.family_alert import (
     list_eligible_trusted_contacts,
     list_family_alerts,
     resolve_family_alert,
+    save_family_alert_delivery_state,
 )
 from app.schemas.family_alert import (
+    FamilyAlertDispatchRequest,
+    FamilyAlertDispatchResponse,
     FamilyAlertListResponse,
     FamilyAlertResolveRequest,
     FamilyAlertResponse,
 )
 from app.services.family_alert_service import (
+    apply_simulated_alert_delivery,
     build_alert_recipients,
     build_family_alert_summary,
     build_family_alert_title,
@@ -415,4 +419,138 @@ async def resolve_alert(
 
     return FamilyAlertResponse.model_validate(
         alert
+    )
+
+@router.post(
+    "/{family_id}/alerts/{alert_id}/dispatch",
+    response_model=FamilyAlertDispatchResponse,
+    status_code=status.HTTP_200_OK,
+    summary="模拟发送家庭告警",
+)
+async def dispatch_family_alert(
+    family_id: uuid.UUID,
+    alert_id: uuid.UUID,
+    payload: FamilyAlertDispatchRequest,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FamilyAlertDispatchResponse:
+    """
+    模拟向家庭告警接收人发送通知。
+
+    被保护用户本人、家庭 owner 或 admin
+    可以执行告警发送。
+    """
+
+    membership = await require_family_membership(
+        db,
+        family_id=family_id,
+        user_id=current_user.id,
+    )
+
+    alert = await get_family_alert_by_id(
+        db,
+        family_id=family_id,
+        alert_id=alert_id,
+    )
+
+    if alert is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="家庭告警不存在或无权访问。",
+        )
+
+    if (
+        current_user.id != alert.subject_user_id
+        and membership.role not in {
+            "owner",
+            "admin",
+        }
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "只有被保护用户本人、家庭所有者"
+                "或管理员可以发送家庭告警。"
+            ),
+        )
+
+    if alert.status == "resolved":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "已经处理完成的家庭告警"
+                "不能继续发送。"
+            ),
+        )
+
+    if alert.status == "cancelled":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "已取消的家庭告警不能发送。"
+            ),
+        )
+
+    alert_recipient_ids = {
+        recipient.id
+        for recipient in alert.recipients
+    }
+
+    requested_failure_ids = set(
+        payload.simulated_failure_recipient_ids
+    )
+
+    unknown_recipient_ids = (
+        requested_failure_ids
+        - alert_recipient_ids
+    )
+
+    if unknown_recipient_ids:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail=(
+                "模拟失败接收人不属于该家庭告警。"
+            ),
+        )
+
+    dispatch_summary = (
+        apply_simulated_alert_delivery(
+            alert.recipients,
+            simulated_failure_recipient_ids=(
+                requested_failure_ids
+            ),
+        )
+    )
+
+    updated_alert = (
+        await save_family_alert_delivery_state(
+            db,
+            alert=alert,
+        )
+    )
+
+    return FamilyAlertDispatchResponse(
+        family_id=family_id,
+        alert_id=alert_id,
+        attempted_count=(
+            dispatch_summary.attempted_count
+        ),
+        sent_count=dispatch_summary.sent_count,
+        failed_count=(
+            dispatch_summary.failed_count
+        ),
+        skipped_count=(
+            dispatch_summary.skipped_count
+        ),
+        already_completed_count=(
+            dispatch_summary
+            .already_completed_count
+        ),
+        alert=FamilyAlertResponse.model_validate(
+            updated_alert
+        ),
     )

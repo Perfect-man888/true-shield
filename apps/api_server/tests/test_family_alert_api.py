@@ -696,3 +696,384 @@ async def test_outside_user_cannot_acknowledge_alert(
     )
 
     assert response.status_code == 404
+
+async def dispatch_alert(
+    client: AsyncClient,
+    *,
+    family_id: str,
+    alert_id: str,
+    headers: dict[str, str],
+    simulated_failure_recipient_ids: (
+        list[str] | None
+    ) = None,
+):
+    """调用家庭告警模拟发送接口。"""
+
+    return await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert_id}/dispatch"
+        ),
+        headers=headers,
+        json={
+            "simulated_failure_recipient_ids": (
+                simulated_failure_recipient_ids
+                or []
+            ),
+        },
+    )
+
+
+async def test_owner_can_dispatch_alert(
+    client: AsyncClient,
+) -> None:
+    """家庭所有者可以发送家庭告警。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="DispatchAlertOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    await create_trusted_contact(
+        client,
+        family_id=family["id"],
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    response = await dispatch_alert(
+        client,
+        family_id=family["id"],
+        alert_id=alert["id"],
+        headers=headers,
+    )
+
+    assert response.status_code == 200, (
+        response.text
+    )
+
+    body = response.json()
+
+    assert body["attempted_count"] == 1
+    assert body["sent_count"] == 1
+    assert body["failed_count"] == 0
+    assert body["skipped_count"] == 0
+
+    recipient = body["alert"]["recipients"][0]
+
+    assert recipient["delivery_status"] == "sent"
+    assert recipient["sent_at"] is not None
+    assert recipient["failure_reason"] is None
+
+
+async def test_failed_delivery_can_be_retried(
+    client: AsyncClient,
+) -> None:
+    """模拟失败的发送记录可以重新发送。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="RetryDispatchOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    await create_trusted_contact(
+        client,
+        family_id=family["id"],
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    recipient_id = alert["recipients"][0]["id"]
+
+    failed_response = await dispatch_alert(
+        client,
+        family_id=family["id"],
+        alert_id=alert["id"],
+        headers=headers,
+        simulated_failure_recipient_ids=[
+            recipient_id,
+        ],
+    )
+
+    assert failed_response.status_code == 200
+
+    failed_body = failed_response.json()
+
+    assert failed_body["failed_count"] == 1
+
+    failed_recipient = (
+        failed_body["alert"]["recipients"][0]
+    )
+
+    assert (
+        failed_recipient["delivery_status"]
+        == "failed"
+    )
+    assert failed_recipient["sent_at"] is None
+    assert failed_recipient["failure_reason"] == (
+        "模拟发送失败。"
+    )
+
+    retry_response = await dispatch_alert(
+        client,
+        family_id=family["id"],
+        alert_id=alert["id"],
+        headers=headers,
+    )
+
+    assert retry_response.status_code == 200
+
+    retry_body = retry_response.json()
+
+    assert retry_body["attempted_count"] == 1
+    assert retry_body["sent_count"] == 1
+
+    retried_recipient = (
+        retry_body["alert"]["recipients"][0]
+    )
+
+    assert (
+        retried_recipient["delivery_status"]
+        == "sent"
+    )
+    assert retried_recipient["sent_at"] is not None
+    assert retried_recipient["failure_reason"] is None
+
+
+async def test_sent_delivery_is_idempotent(
+    client: AsyncClient,
+) -> None:
+    """已成功发送的接收人不应重复发送。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="IdempotentDispatchOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    await create_trusted_contact(
+        client,
+        family_id=family["id"],
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    first_response = await dispatch_alert(
+        client,
+        family_id=family["id"],
+        alert_id=alert["id"],
+        headers=headers,
+    )
+
+    assert first_response.status_code == 200
+
+    second_response = await dispatch_alert(
+        client,
+        family_id=family["id"],
+        alert_id=alert["id"],
+        headers=headers,
+    )
+
+    assert second_response.status_code == 200
+
+    second_body = second_response.json()
+
+    assert second_body["attempted_count"] == 0
+    assert second_body["sent_count"] == 0
+    assert (
+        second_body["already_completed_count"]
+        == 1
+    )
+
+
+async def test_alert_without_recipients_can_dispatch(
+    client: AsyncClient,
+) -> None:
+    """没有接收人的告警调用发送接口也应成功。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="EmptyDispatchOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    response = await dispatch_alert(
+        client,
+        family_id=family["id"],
+        alert_id=alert["id"],
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["attempted_count"] == 0
+    assert body["sent_count"] == 0
+    assert body["failed_count"] == 0
+    assert body["alert"]["recipients"] == []
+
+
+async def test_resolved_alert_cannot_dispatch(
+    client: AsyncClient,
+) -> None:
+    """已经处理完成的告警不能继续发送。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="ResolvedDispatchOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    resolve_response = await client.post(
+        (
+            f"/api/v1/families/{family['id']}"
+            f"/alerts/{alert['id']}/resolve"
+        ),
+        headers=headers,
+        json={
+            "resolution_note": "已经完成处理。",
+        },
+    )
+
+    assert resolve_response.status_code == 200
+
+    response = await dispatch_alert(
+        client,
+        family_id=family["id"],
+        alert_id=alert["id"],
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+
+    assert response.json()["detail"] == (
+        "已经处理完成的家庭告警不能继续发送。"
+    )
+
+
+async def test_outside_user_cannot_dispatch_alert(
+    client: AsyncClient,
+) -> None:
+    """非家庭成员不能发送家庭告警。"""
+
+    _, owner_headers = await register_and_login(
+        client,
+        name="PrivateDispatchOwner",
+    )
+
+    _, outside_headers = await register_and_login(
+        client,
+        name="OutsideDispatchUser",
+    )
+
+    family = await create_family(
+        client,
+        headers=owner_headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=owner_headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=owner_headers,
+    )
+
+    response = await dispatch_alert(
+        client,
+        family_id=family["id"],
+        alert_id=alert["id"],
+        headers=outside_headers,
+    )
+
+    assert response.status_code == 404

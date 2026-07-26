@@ -156,3 +156,68 @@ class FamilyAlertResolveRequest(BaseModel):
         normalized = value.strip()
 
         return normalized or None
+
+class FamilyAlertDispatchRequest(BaseModel):
+    """模拟发送家庭告警时使用的请求模型。"""
+
+    simulated_failure_recipient_ids: list[
+        uuid.UUID
+    ] = Field(
+        default_factory=list,
+        description=(
+            "需要模拟发送失败的接收人 ID。"
+            "正常调用时传空数组。"
+        ),
+    )
+
+    @field_validator(
+        "simulated_failure_recipient_ids"
+    )
+    @classmethod
+    def validate_unique_recipient_ids(
+        cls,
+        value: list[uuid.UUID],
+    ) -> list[uuid.UUID]:
+        """模拟失败接收人不能重复。"""
+
+        if len(value) != len(set(value)):
+            raise ValueError(
+                "模拟失败接收人 ID 不能重复。"
+            )
+
+        return value
+
+
+class FamilyAlertDispatchResponse(BaseModel):
+    """家庭告警模拟发送结果。"""
+
+    family_id: uuid.UUID
+
+    alert_id: uuid.UUID
+
+    attempted_count: int = Field(
+        ge=0,
+        description="本次实际尝试发送的数量",
+    )
+
+    sent_count: int = Field(
+        ge=0,
+        description="本次发送成功的数量",
+    )
+
+    failed_count: int = Field(
+        ge=0,
+        description="本次发送失败的数量",
+    )
+
+    skipped_count: int = Field(
+        ge=0,
+        description="本次因缺少地址而跳过的数量",
+    )
+
+    already_completed_count: int = Field(
+        ge=0,
+        description="之前已经发送成功或跳过的数量",
+    )
+
+    alert: FamilyAlertResponse
