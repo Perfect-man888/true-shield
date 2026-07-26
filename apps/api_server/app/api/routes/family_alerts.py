@@ -28,12 +28,20 @@ from app.repositories.family_alert import (
     resolve_family_alert,
     save_family_alert_delivery_state,
 )
+from app.repositories.family_alert_policy import (
+    get_or_create_family_alert_policy,
+    update_family_alert_policy,
+)
 from app.schemas.family_alert import (
     FamilyAlertDispatchRequest,
     FamilyAlertDispatchResponse,
     FamilyAlertListResponse,
     FamilyAlertResolveRequest,
     FamilyAlertResponse,
+)
+from app.schemas.family_alert_policy import (
+    FamilyAlertPolicyResponse,
+    FamilyAlertPolicyUpdate,
 )
 from app.services.family_alert_service import (
     apply_simulated_alert_delivery,
@@ -553,4 +561,103 @@ async def dispatch_family_alert(
         alert=FamilyAlertResponse.model_validate(
             updated_alert
         ),
+    )
+
+@router.get(
+    "/{family_id}/alert-policy",
+    response_model=FamilyAlertPolicyResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查询家庭告警自动触发策略",
+)
+async def get_alert_policy(
+    family_id: uuid.UUID,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FamilyAlertPolicyResponse:
+    """家庭成员查询家庭告警策略。"""
+
+    await require_family_membership(
+        db,
+        family_id=family_id,
+        user_id=current_user.id,
+    )
+
+    policy = (
+        await get_or_create_family_alert_policy(
+            db,
+            family_id=family_id,
+        )
+    )
+
+    return (
+        FamilyAlertPolicyResponse.model_validate(
+            policy
+        )
+    )
+
+
+@router.patch(
+    "/{family_id}/alert-policy",
+    response_model=FamilyAlertPolicyResponse,
+    status_code=status.HTTP_200_OK,
+    summary="更新家庭告警自动触发策略",
+)
+async def patch_alert_policy(
+    family_id: uuid.UUID,
+    payload: FamilyAlertPolicyUpdate,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FamilyAlertPolicyResponse:
+    """家庭所有者或管理员更新告警策略。"""
+
+    membership = await require_family_membership(
+        db,
+        family_id=family_id,
+        user_id=current_user.id,
+    )
+
+    if membership.role not in {
+        "owner",
+        "admin",
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "只有家庭所有者或管理员"
+                "可以修改告警策略。"
+            ),
+        )
+
+    policy = (
+        await get_or_create_family_alert_policy(
+            db,
+            family_id=family_id,
+        )
+    )
+
+    update_data = payload.model_dump(
+        exclude_unset=True,
+        mode="json",
+    )
+
+    if not update_data:
+        return (
+            FamilyAlertPolicyResponse
+            .model_validate(policy)
+        )
+
+    policy = await update_family_alert_policy(
+        db,
+        policy=policy,
+        update_data=update_data,
+    )
+
+    return (
+        FamilyAlertPolicyResponse.model_validate(
+            policy
+        )
     )

@@ -7,6 +7,9 @@ from app.models.family_alert import (
     FamilyAlert,
     FamilyAlertRecipient,
 )
+from app.models.family_alert_policy import (
+    FamilyAlertPolicy,
+)
 from app.models.risk import (
     RiskEvent,
     RiskFeedback,
@@ -26,4 +29,5 @@ __all__ = [
     "TrustedContact",
     "FamilyAlert",
     "FamilyAlertRecipient",
+    "FamilyAlertPolicy",
 ]
