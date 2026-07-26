@@ -369,3 +369,36 @@ async def record_family_alert_delivery_attempts(
     await db.flush()
 
     return attempts
+
+async def list_family_alert_delivery_attempts(
+    db: AsyncSession,
+    *,
+    alert_id: uuid.UUID,
+) -> list[FamilyAlertDeliveryAttempt]:
+    """查询某个家庭告警的全部发送尝试记录。"""
+
+    statement = (
+        select(FamilyAlertDeliveryAttempt)
+        .join(
+            FamilyAlertRecipient,
+            (
+                FamilyAlertRecipient.id
+                == FamilyAlertDeliveryAttempt
+                .recipient_id
+            ),
+        )
+        .where(
+            FamilyAlertRecipient.alert_id
+            == alert_id,
+        )
+        .order_by(
+            FamilyAlertDeliveryAttempt
+            .attempted_at.desc(),
+            FamilyAlertDeliveryAttempt
+            .attempt_number.desc(),
+        )
+    )
+
+    result = await db.execute(statement)
+
+    return list(result.scalars().all())

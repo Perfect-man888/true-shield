@@ -225,3 +225,50 @@ class FamilyAlertDispatchResponse(BaseModel):
     )
 
     alert: FamilyAlertResponse
+
+class FamilyAlertDeliveryAttemptResponse(BaseModel):
+    """单次家庭告警通知发送记录。"""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+    id: uuid.UUID
+
+    recipient_id: uuid.UUID
+
+    attempt_number: int
+
+    channel: AlertDeliveryChannel
+
+    destination: str | None
+
+    provider: str
+
+    status: AlertDeliveryStatus
+
+    external_message_id: str | None
+
+    failure_reason: str | None
+
+    attempted_at: datetime
+
+
+class FamilyAlertDeliveryAttemptListResponse(
+    BaseModel
+):
+    """家庭告警发送记录列表。"""
+
+    family_id: uuid.UUID
+
+    alert_id: uuid.UUID
+
+    items: list[
+        FamilyAlertDeliveryAttemptResponse
+    ] = Field(
+        default_factory=list,
+    )
+
+    total: int = Field(
+        ge=0,
+    )

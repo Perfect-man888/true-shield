@@ -24,6 +24,7 @@ from app.repositories.family_alert import (
     get_family_alert_by_id,
     get_risk_event_for_family_alert,
     list_eligible_trusted_contacts,
+    list_family_alert_delivery_attempts,
     list_family_alerts,
     record_family_alert_delivery_attempts,
     resolve_family_alert,
@@ -34,6 +35,7 @@ from app.repositories.family_alert_policy import (
     update_family_alert_policy,
 )
 from app.schemas.family_alert import (
+    FamilyAlertDeliveryAttemptListResponse,
     FamilyAlertDispatchRequest,
     FamilyAlertDispatchResponse,
     FamilyAlertListResponse,
@@ -671,5 +673,59 @@ async def patch_alert_policy(
     return (
         FamilyAlertPolicyResponse.model_validate(
             policy
+        )
+    )
+
+@router.get(
+    (
+        "/{family_id}/alerts/{alert_id}"
+        "/delivery-attempts"
+    ),
+    response_model=(
+        FamilyAlertDeliveryAttemptListResponse
+    ),
+    summary="查询家庭告警发送记录",
+)
+async def get_alert_delivery_attempts(
+    family_id: uuid.UUID,
+    alert_id: uuid.UUID,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FamilyAlertDeliveryAttemptListResponse:
+    """查询指定家庭告警的全部发送尝试记录。"""
+
+    await require_family_membership(
+        db,
+        family_id=family_id,
+        user_id=current_user.id,
+    )
+
+    alert = await get_family_alert_by_id(
+        db,
+        family_id=family_id,
+        alert_id=alert_id,
+    )
+
+    if alert is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="家庭告警不存在或无权访问。",
+        )
+
+    attempts = (
+        await list_family_alert_delivery_attempts(
+            db,
+            alert_id=alert.id,
+        )
+    )
+
+    return (
+        FamilyAlertDeliveryAttemptListResponse(
+            family_id=family_id,
+            alert_id=alert.id,
+            items=attempts,
+            total=len(attempts),
         )
     )
