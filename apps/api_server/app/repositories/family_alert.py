@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -203,3 +204,77 @@ async def get_family_alert_by_id(
     result = await db.execute(statement)
 
     return result.scalar_one_or_none()
+
+async def reload_family_alert(
+    db: AsyncSession,
+    *,
+    alert_id: uuid.UUID,
+) -> FamilyAlert:
+    """重新加载家庭告警及接收人。"""
+
+    statement = (
+        select(FamilyAlert)
+        .where(
+            FamilyAlert.id == alert_id,
+        )
+        .options(
+            selectinload(FamilyAlert.recipients),
+        )
+    )
+
+    result = await db.execute(statement)
+
+    return result.scalar_one()
+
+
+async def acknowledge_family_alert(
+    db: AsyncSession,
+    *,
+    alert: FamilyAlert,
+    user_id: uuid.UUID,
+) -> FamilyAlert:
+    """确认已经看到家庭风险告警。"""
+
+    alert_id = alert.id
+    now = datetime.now(UTC)
+
+    alert.status = "acknowledged"
+    alert.acknowledged_by_user_id = user_id
+    alert.acknowledged_at = now
+
+    await db.commit()
+
+    return await reload_family_alert(
+        db,
+        alert_id=alert_id,
+    )
+
+
+async def resolve_family_alert(
+    db: AsyncSession,
+    *,
+    alert: FamilyAlert,
+    user_id: uuid.UUID,
+    resolution_note: str | None,
+) -> FamilyAlert:
+    """将家庭告警标记为处理完成。"""
+
+    alert_id = alert.id
+    now = datetime.now(UTC)
+
+    # 如果告警尚未确认，直接处理完成时同时记录确认人。
+    if alert.acknowledged_at is None:
+        alert.acknowledged_by_user_id = user_id
+        alert.acknowledged_at = now
+
+    alert.status = "resolved"
+    alert.resolved_by_user_id = user_id
+    alert.resolved_at = now
+    alert.resolution_note = resolution_note
+
+    await db.commit()
+
+    return await reload_family_alert(
+        db,
+        alert_id=alert_id,
+    )

@@ -419,3 +419,280 @@ async def test_outside_user_cannot_create_alert(
     )
 
     assert response.status_code == 404
+
+async def test_family_member_can_acknowledge_alert(
+    client: AsyncClient,
+) -> None:
+    """家庭成员可以确认风险告警。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="AcknowledgeAlertOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    response = await client.post(
+        (
+            f"/api/v1/families/{family['id']}"
+            f"/alerts/{alert['id']}"
+            "/acknowledge"
+        ),
+        headers=headers,
+    )
+
+    assert response.status_code == 200, (
+        response.text
+    )
+
+    body = response.json()
+
+    assert body["status"] == "acknowledged"
+    assert (
+        body["acknowledged_by_user_id"]
+        is not None
+    )
+    assert body["acknowledged_at"] is not None
+    assert body["resolved_at"] is None
+
+
+async def test_subject_user_can_resolve_alert(
+    client: AsyncClient,
+) -> None:
+    """被保护用户可以完成风险告警处理。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="ResolveAlertOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    response = await client.post(
+        (
+            f"/api/v1/families/{family['id']}"
+            f"/alerts/{alert['id']}"
+            "/resolve"
+        ),
+        headers=headers,
+        json={
+            "resolution_note": (
+                "已联系本人确认，没有发生转账，"
+                "并已拉黑可疑联系人。"
+            ),
+        },
+    )
+
+    assert response.status_code == 200, (
+        response.text
+    )
+
+    body = response.json()
+
+    assert body["status"] == "resolved"
+    assert body["acknowledged_at"] is not None
+    assert body["resolved_at"] is not None
+    assert (
+        body["resolved_by_user_id"]
+        is not None
+    )
+    assert body["resolution_note"] == (
+        "已联系本人确认，没有发生转账，"
+        "并已拉黑可疑联系人。"
+    )
+
+
+async def test_resolve_alert_is_idempotent(
+    client: AsyncClient,
+) -> None:
+    """重复完成处理应返回同一告警。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="IdempotentResolveOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    url = (
+        f"/api/v1/families/{family['id']}"
+        f"/alerts/{alert['id']}/resolve"
+    )
+
+    first_response = await client.post(
+        url,
+        headers=headers,
+        json={
+            "resolution_note": "已完成核实。",
+        },
+    )
+
+    assert first_response.status_code == 200
+
+    second_response = await client.post(
+        url,
+        headers=headers,
+        json={
+            "resolution_note": "重复提交。",
+        },
+    )
+
+    assert second_response.status_code == 200
+
+    assert (
+        second_response.json()["id"]
+        == first_response.json()["id"]
+    )
+
+    assert (
+        second_response.json()["resolution_note"]
+        == "已完成核实。"
+    )
+
+
+async def test_resolved_alert_cannot_be_acknowledged(
+    client: AsyncClient,
+) -> None:
+    """已经处理完成的告警不能再次确认。"""
+
+    _, headers = await register_and_login(
+        client,
+        name="ResolvedAcknowledgeOwner",
+    )
+
+    family = await create_family(
+        client,
+        headers=headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=headers,
+    )
+
+    await client.post(
+        (
+            f"/api/v1/families/{family['id']}"
+            f"/alerts/{alert['id']}/resolve"
+        ),
+        headers=headers,
+        json={
+            "resolution_note": "已处理。",
+        },
+    )
+
+    response = await client.post(
+        (
+            f"/api/v1/families/{family['id']}"
+            f"/alerts/{alert['id']}"
+            "/acknowledge"
+        ),
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+
+    assert response.json()["detail"] == (
+        "该家庭告警已经处理完成。"
+    )
+
+
+async def test_outside_user_cannot_acknowledge_alert(
+    client: AsyncClient,
+) -> None:
+    """非家庭成员不能确认家庭告警。"""
+
+    _, owner_headers = await register_and_login(
+        client,
+        name="PrivateLifecycleOwner",
+    )
+
+    _, outside_headers = await register_and_login(
+        client,
+        name="OutsideLifecycleUser",
+    )
+
+    family = await create_family(
+        client,
+        headers=owner_headers,
+    )
+
+    event = await create_risk_event(
+        client,
+        headers=owner_headers,
+        high_risk=True,
+    )
+
+    alert = await create_alert(
+        client,
+        family_id=family["id"],
+        event_id=event["event_id"],
+        headers=owner_headers,
+    )
+
+    response = await client.post(
+        (
+            f"/api/v1/families/{family['id']}"
+            f"/alerts/{alert['id']}"
+            "/acknowledge"
+        ),
+        headers=outside_headers,
+    )
+
+    assert response.status_code == 404

@@ -8,6 +8,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    field_validator,
 )
 
 
@@ -125,3 +126,33 @@ class FamilyAlertListResponse(BaseModel):
     total: int = Field(
         ge=0,
     )
+
+class FamilyAlertResolveRequest(BaseModel):
+    """完成家庭告警处理时提交的数据。"""
+
+    resolution_note: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="家庭成员对该风险事件的处置说明",
+    )
+
+    @field_validator(
+        "resolution_note",
+        mode="before",
+    )
+    @classmethod
+    def normalize_resolution_note(
+        cls,
+        value: object,
+    ) -> object:
+        """清理处置说明首尾空白。"""
+
+        if value is None:
+            return None
+
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip()
+
+        return normalized or None
