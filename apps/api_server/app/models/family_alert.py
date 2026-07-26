@@ -299,6 +299,19 @@ class FamilyAlertRecipient(Base):
         index=True,
     )
 
+    delivery_provider: Mapped[
+        str | None
+    ] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    external_message_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+    )
     failure_reason: Mapped[
         str | None
     ] = mapped_column(

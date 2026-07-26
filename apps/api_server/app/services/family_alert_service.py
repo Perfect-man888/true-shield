@@ -250,6 +250,10 @@ async def deliver_family_alert_notifications(
         results,
         strict=True,
     ):
+        recipient.delivery_provider = result.provider
+        recipient.external_message_id = (
+        result.external_message_id
+        )
         if result.status == "sent":
             recipient.delivery_status = "sent"
             recipient.failure_reason = None

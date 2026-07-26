@@ -19,12 +19,14 @@ def build_recipient(
     delivery_status: str = "pending",
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        id=uuid.uuid4(),
-        channel=channel,
-        destination=destination,
-        delivery_status=delivery_status,
-        failure_reason=None,
-        sent_at=None,
+    id=uuid.uuid4(),
+    channel=channel,
+    destination=destination,
+    delivery_status=delivery_status,
+    delivery_provider=None,
+    external_message_id=None,
+    failure_reason=None,
+    sent_at=None,
     )
 
 
@@ -46,6 +48,14 @@ async def test_delivery_marks_recipient_sent() -> None:
     assert recipient.delivery_status == "sent"
     assert recipient.failure_reason is None
     assert recipient.sent_at is not None
+    assert (
+    recipient.delivery_provider
+    == "simulated"
+    )
+    assert recipient.external_message_id
+    assert recipient.external_message_id.startswith(
+        "sim-"
+    )
 
 
 async def test_delivery_supports_in_app_without_destination() -> None:
@@ -89,6 +99,11 @@ async def test_delivery_failure_can_be_recorded() -> None:
         "模拟发送失败。"
     )
     assert recipient.sent_at is None
+    assert (
+    recipient.delivery_provider
+    == "simulated"
+    )
+    assert recipient.external_message_id is None
 
 
 async def test_completed_recipient_is_idempotent() -> None:

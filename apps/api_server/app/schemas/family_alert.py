@@ -62,6 +62,10 @@ class FamilyAlertRecipientResponse(BaseModel):
 
     delivery_status: AlertDeliveryStatus
 
+    delivery_provider: str | None
+
+    external_message_id: str | None
+
     failure_reason: str | None
 
     sent_at: datetime | None
