@@ -729,3 +729,120 @@ async def get_alert_delivery_attempts(
             total=len(attempts),
         )
     )
+
+@router.post(
+    (
+        "/{family_id}/alerts/{alert_id}"
+        "/retry-failed"
+    ),
+    response_model=FamilyAlertDispatchResponse,
+    summary="重试发送失败的家庭告警通知",
+)
+async def retry_failed_alert_deliveries(
+    family_id: uuid.UUID,
+    alert_id: uuid.UUID,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> FamilyAlertDispatchResponse:
+    """仅重新发送当前状态为 failed 的接收人。"""
+
+    current_membership = (
+        await require_family_membership(
+            db,
+            family_id=family_id,
+            user_id=current_user.id,
+        )
+    )
+
+    alert = await get_family_alert_by_id(
+        db,
+        family_id=family_id,
+        alert_id=alert_id,
+    )
+
+    if alert is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="家庭告警不存在或无权访问。",
+        )
+
+    if (
+        alert.subject_user_id != current_user.id
+        and current_membership.role
+        not in {"owner", "admin"}
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "只有被保护用户本人、家庭所有者"
+                "或管理员可以重试家庭告警。"
+            ),
+        )
+
+    if alert.status == "resolved":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="已经处理完成的家庭告警不能重试。",
+        )
+
+    if alert.status == "cancelled":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="已经取消的家庭告警不能重试。",
+        )
+
+    failed_recipients = [
+        recipient
+        for recipient in alert.recipients
+        if recipient.delivery_status == "failed"
+    ]
+
+    if not failed_recipients:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前没有需要重试的失败接收人。",
+        )
+
+    dispatch_summary = (
+        await deliver_family_alert_notifications(
+            failed_recipients,
+            title=alert.title,
+            message=alert.summary,
+            simulated_failure_recipient_ids=set(),
+        )
+    )
+
+    await record_family_alert_delivery_attempts(
+        db,
+        recipients=failed_recipients,
+        attempted_recipient_ids=set(
+            dispatch_summary.attempted_recipient_ids
+        ),
+    )
+
+    updated_alert = (
+        await save_family_alert_delivery_state(
+            db,
+            alert=alert,
+        )
+    )
+
+    return FamilyAlertDispatchResponse(
+        family_id=family_id,
+        alert_id=alert.id,
+        attempted_count=(
+            dispatch_summary.attempted_count
+        ),
+        sent_count=dispatch_summary.sent_count,
+        failed_count=dispatch_summary.failed_count,
+        skipped_count=(
+            dispatch_summary.skipped_count
+        ),
+        already_completed_count=(
+            dispatch_summary
+            .already_completed_count
+        ),
+        alert=updated_alert,
+    )

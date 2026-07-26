@@ -455,3 +455,173 @@ async def test_outside_user_cannot_query_attempts(
         403,
         404,
     }
+
+async def test_failed_recipient_can_be_retried(
+    client: AsyncClient,
+) -> None:
+    """失败通知应能通过专用接口重试成功。"""
+
+    headers, family_id, alert = (
+        await prepare_pending_alert(
+            client,
+            user_name="RetryFailedOwner",
+        )
+    )
+
+    recipient_id = alert["recipients"][0]["id"]
+
+    failed_response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}/dispatch"
+        ),
+        headers=headers,
+        json={
+            "simulated_failure_recipient_ids": [
+                recipient_id,
+            ],
+        },
+    )
+
+    assert failed_response.status_code == 200, (
+        failed_response.text
+    )
+    assert failed_response.json()["failed_count"] == 1
+
+    retry_response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}"
+            "/retry-failed"
+        ),
+        headers=headers,
+    )
+
+    assert retry_response.status_code == 200, (
+        retry_response.text
+    )
+
+    retry_body = retry_response.json()
+
+    assert retry_body["attempted_count"] == 1
+    assert retry_body["sent_count"] == 1
+    assert retry_body["failed_count"] == 0
+
+    recipient = retry_body["alert"][
+        "recipients"
+    ][0]
+
+    assert recipient["delivery_status"] == "sent"
+    assert (
+        recipient["delivery_provider"]
+        == "simulated"
+    )
+    assert recipient[
+        "external_message_id"
+    ].startswith("sim-")
+
+    attempts_response = await client.get(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}"
+            "/delivery-attempts"
+        ),
+        headers=headers,
+    )
+
+    assert attempts_response.status_code == 200, (
+        attempts_response.text
+    )
+
+    attempts = attempts_response.json()
+
+    assert attempts["total"] == 2
+
+    assert [
+        item["status"]
+        for item in attempts["items"]
+    ] == ["sent", "failed"]
+
+    assert [
+        item["attempt_number"]
+        for item in attempts["items"]
+    ] == [2, 1]
+
+
+async def test_retry_rejected_when_no_failed_recipient(
+    client: AsyncClient,
+) -> None:
+    """没有失败接收人时不应执行重试。"""
+
+    headers, family_id, alert = (
+        await prepare_pending_alert(
+            client,
+            user_name="NoFailedRetryOwner",
+        )
+    )
+
+    response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}"
+            "/retry-failed"
+        ),
+        headers=headers,
+    )
+
+    assert response.status_code == 409, response.text
+
+    assert response.json()["detail"] == (
+        "当前没有需要重试的失败接收人。"
+    )
+
+
+async def test_outside_user_cannot_retry_failed_delivery(
+    client: AsyncClient,
+) -> None:
+    """家庭外用户不能重试家庭告警通知。"""
+
+    owner_headers, family_id, alert = (
+        await prepare_pending_alert(
+            client,
+            user_name="PrivateRetryOwner",
+        )
+    )
+
+    recipient_id = alert["recipients"][0]["id"]
+
+    failed_response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}/dispatch"
+        ),
+        headers=owner_headers,
+        json={
+            "simulated_failure_recipient_ids": [
+                recipient_id,
+            ],
+        },
+    )
+
+    assert failed_response.status_code == 200, (
+        failed_response.text
+    )
+
+    _, outside_headers = await register_and_login(
+        client,
+        name="OutsideRetryUser",
+    )
+
+    response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}"
+            "/retry-failed"
+        ),
+        headers=outside_headers,
+    )
+
+    assert response.status_code in {
+        403,
+        404,
+    }
