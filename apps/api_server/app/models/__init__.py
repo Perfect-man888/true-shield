@@ -3,6 +3,10 @@ from app.models.family import (
     FamilyInvitation,
     FamilyMember,
 )
+from app.models.family_alert import (
+    FamilyAlert,
+    FamilyAlertRecipient,
+)
 from app.models.risk import (
     RiskEvent,
     RiskFeedback,
@@ -20,4 +24,6 @@ __all__ = [
     "FamilyMember",
     "FamilyInvitation",
     "TrustedContact",
+    "FamilyAlert",
+    "FamilyAlertRecipient",
 ]
