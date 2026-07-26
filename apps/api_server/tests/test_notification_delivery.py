@@ -204,3 +204,44 @@ async def test_factory_rejects_unknown_provider() -> None:
         build_notification_delivery_service(
             provider_name="unknown",
         )
+
+async def test_hybrid_factory_registers_providers_in_order(
+) -> None:
+    """混合模式应优先使用 SMTP，再使用模拟提供商。"""
+
+    service = build_notification_delivery_service(
+        provider_name="hybrid",
+    )
+
+    provider_names = [
+        provider.name
+        for provider in service.providers
+    ]
+
+    assert provider_names == [
+        "smtp",
+        "simulated",
+    ]
+
+
+async def test_hybrid_factory_uses_simulated_for_sms(
+) -> None:
+    """混合模式下短信应交给模拟提供商。"""
+
+    service = build_notification_delivery_service(
+        provider_name="hybrid",
+    )
+
+    result = await service.deliver(
+        build_request(
+            channel="sms",
+            destination="13800138000",
+        )
+    )
+
+    assert result.status == "sent"
+    assert result.provider == "simulated"
+    assert result.external_message_id
+    assert result.external_message_id.startswith(
+        "sim-"
+    )

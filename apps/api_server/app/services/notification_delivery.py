@@ -303,6 +303,39 @@ def build_notification_delivery_service(
             ],
         )
 
+    if selected_provider in {
+        "hybrid",
+        "mixed",
+    }:
+        from app.services.email_notification_provider import (
+            SMTPEmailNotificationProvider,
+        )
+
+        return NotificationDeliveryService(
+            providers=[
+                # SMTP 必须放在模拟提供商前面，
+                # 否则 email 会先被 simulated 接管。
+                SMTPEmailNotificationProvider(
+                    host=settings.smtp_host,
+                    port=settings.smtp_port,
+                    username=settings.smtp_username,
+                    password=settings.smtp_password,
+                    from_email=(
+                        settings.smtp_from_email
+                    ),
+                    use_tls=settings.smtp_use_tls,
+                    timeout_seconds=(
+                        settings.smtp_timeout_seconds
+                    ),
+                ),
+                SimulatedNotificationProvider(
+                    failed_recipient_ids=(
+                        simulated_failure_recipient_ids
+                    ),
+                ),
+            ],
+        )
+
     raise ValueError(
         "不支持的通知服务商："
         f"{selected_provider}"
