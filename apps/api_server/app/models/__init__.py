@@ -8,6 +8,7 @@ from app.models.risk import (
     RiskFeedback,
     RiskSignal,
 )
+from app.models.trusted_contact import TrustedContact
 from app.models.user import User
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "Family",
     "FamilyMember",
     "FamilyInvitation",
+    "TrustedContact",
 ]
