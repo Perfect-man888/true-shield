@@ -5,10 +5,35 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+import app.api.routes.risk as risk_routes
+
 TEST_PASSWORD = "FamilyAlertTest_123!"
 
 pytestmark = pytest.mark.asyncio
 
+@pytest.fixture(autouse=True)
+def disable_automatic_family_alert_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    本测试文件只验证手动家庭告警接口。
+
+    风险分析后的自动告警功能由独立的自动化测试验证，
+    因此这里关闭自动触发，避免告警被提前创建。
+    """
+
+    async def no_op_trigger(
+        db,
+        *,
+        event,
+    ):
+        return None
+
+    monkeypatch.setattr(
+        risk_routes,
+        "trigger_family_alert_automation_safely",
+        no_op_trigger,
+    )
 
 async def register_and_login(
     client: AsyncClient,

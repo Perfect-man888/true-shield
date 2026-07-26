@@ -55,6 +55,9 @@ from app.schemas.risk_url import (
     URLRedirectInspection,
     URLRiskAnalysisRequest,
 )
+from app.services.family_alert_automation_service import (
+    trigger_family_alert_automation_safely,
+)
 from app.services.ocr_service import (
     OCRImageTooLargeError,
     OCRInvalidImageError,
@@ -188,6 +191,11 @@ async def analyze_text_risk(
         source_text=request.text,
     )
 
+    await trigger_family_alert_automation_safely(
+    db,
+    event=event,
+    )
+
     return PersistedTextRiskAnalysisResponse(
         **analysis.model_dump(),
         event_id=event.id,
@@ -299,6 +307,11 @@ async def analyze_image_risk(
         source_type="image",
         source_text=ocr_result.text,
         source_metadata=image_source_metadata,
+    )
+
+    await trigger_family_alert_automation_safely(
+    db,
+    event=event,
     )
 
     return ImageRiskAnalysisResponse(
@@ -421,6 +434,11 @@ async def analyze_url_risk(
         request=request,
         analysis=analysis,
         redirect_inspection=redirect_inspection,
+    )
+
+    await trigger_family_alert_automation_safely(
+    db,
+    event=event,
     )
 
     return PersistedURLRiskAnalysisResponse(

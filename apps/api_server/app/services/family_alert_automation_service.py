@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Final
@@ -28,6 +29,8 @@ from app.services.family_alert_service import (
     build_family_alert_summary,
     build_family_alert_title,
 )
+
+logger = logging.getLogger(__name__)
 
 RISK_LEVEL_RANK: Final[dict[str, int]] = {
     "low": 1,
@@ -490,3 +493,38 @@ async def execute_family_alert_automation_plan(
         event_id=event.id,
         items=tuple(execution_items),
     )
+
+
+async def trigger_family_alert_automation_safely(
+    db: AsyncSession,
+    *,
+    event: RiskEvent,
+) -> FamilyAlertAutomationExecutionResult | None:
+    """
+    安全触发家庭告警自动化。
+
+    家庭告警自动化发生异常时：
+    1. 回滚当前失败事务；
+    2. 记录异常日志；
+    3. 不影响原风险分析接口返回结果。
+    """
+
+    try:
+        return await execute_family_alert_automation_plan(
+            db,
+            event=event,
+        )
+    except Exception:
+        await db.rollback()
+
+        logger.exception(
+            "家庭告警自动化执行失败："
+            "event_id=%s, user_id=%s, "
+            "source_type=%s, risk_level=%s",
+            event.id,
+            event.user_id,
+            event.source_type,
+            event.risk_level,
+        )
+
+        return None
