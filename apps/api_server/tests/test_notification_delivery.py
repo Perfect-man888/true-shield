@@ -8,6 +8,7 @@ from app.services.notification_delivery import (
     NotificationDeliveryRequest,
     NotificationDeliveryService,
     SimulatedNotificationProvider,
+    build_notification_delivery_service,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -115,6 +116,7 @@ async def test_missing_destination_is_skipped() -> None:
         )
     )
 
+    assert result.destination is None
     assert result.status == "skipped"
     assert result.provider == "none"
     assert (
@@ -175,3 +177,30 @@ async def test_deliver_many_returns_all_results() -> None:
     assert len(results) == 2
     assert results[0].status == "sent"
     assert results[1].status == "failed"
+
+async def test_factory_builds_simulated_provider() -> None:
+    """工厂能够创建模拟通知服务。"""
+
+    service = build_notification_delivery_service(
+        provider_name="simulated",
+    )
+
+    result = await service.deliver(
+        build_request()
+    )
+
+    assert result.status == "sent"
+    assert result.provider == "simulated"
+    assert result.external_message_id
+
+
+async def test_factory_rejects_unknown_provider() -> None:
+    """不支持的通知服务商应明确报错。"""
+
+    with pytest.raises(
+        ValueError,
+        match="不支持的通知服务商",
+    ):
+        build_notification_delivery_service(
+            provider_name="unknown",
+        )

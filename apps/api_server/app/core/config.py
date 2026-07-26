@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
 
+    # Notification
+    notification_provider: str = "simulated"
+
     # Risk engine
     rule_version: str = "v0.1.0"
     model_bundle_version: str = "rules-only-v0.1.0"

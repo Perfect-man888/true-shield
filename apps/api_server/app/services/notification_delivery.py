@@ -4,6 +4,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Final, Literal, Protocol
 
+from app.core.config import settings
+
 DeliveryStatus = Literal[
     "sent",
     "failed",
@@ -180,7 +182,7 @@ class NotificationDeliveryService:
         )
 
         normalized_destination = (
-            request.destination.strip()
+            request.destination.strip() or None
             if request.destination
             else None
         )
@@ -199,7 +201,7 @@ class NotificationDeliveryService:
                     normalized_request.recipient_id
                 ),
                 channel=normalized_channel,
-                destination="None",
+                destination=None,
                 status="skipped",
                 provider="none",
                 failure_reason=(
@@ -249,3 +251,33 @@ class NotificationDeliveryService:
             results.append(result)
 
         return results
+
+def build_notification_delivery_service(
+    *,
+    provider_name: str | None = None,
+    simulated_failure_recipient_ids: (
+        set[uuid.UUID] | None
+    ) = None,
+) -> NotificationDeliveryService:
+    """根据配置创建通知发送服务。"""
+
+    selected_provider = (
+        provider_name
+        or settings.notification_provider
+    ).strip().lower()
+
+    if selected_provider == "simulated":
+        return NotificationDeliveryService(
+            providers=[
+                SimulatedNotificationProvider(
+                    failed_recipient_ids=(
+                        simulated_failure_recipient_ids
+                    ),
+                ),
+            ],
+        )
+
+    raise ValueError(
+        "不支持的通知服务商："
+        f"{selected_provider}"
+    )

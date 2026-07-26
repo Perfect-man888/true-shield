@@ -13,7 +13,7 @@ from app.services.notification_delivery import (
     NotificationDeliveryRequest,
     NotificationDeliveryService,
     NotificationProvider,
-    SimulatedNotificationProvider,
+    build_notification_delivery_service,
 )
 
 SOURCE_TYPE_LABELS = {
@@ -191,24 +191,20 @@ async def deliver_family_alert_notifications(
     failed 和 pending 状态可以再次尝试。
     """
 
-    failure_ids = (
-        simulated_failure_recipient_ids
-        or set()
-    )
-
-    delivery_service = NotificationDeliveryService(
-        providers=(
-            providers
-            if providers is not None
-            else [
-                SimulatedNotificationProvider(
-                    failed_recipient_ids=(
-                        failure_ids
-                    ),
-                )
-            ]
-        ),
-    )
+    if providers is None:
+        delivery_service = (
+            build_notification_delivery_service(
+                simulated_failure_recipient_ids=(
+                    simulated_failure_recipient_ids
+                ),
+            )
+        )
+    else:
+        delivery_service = (
+            NotificationDeliveryService(
+                providers=providers,
+            )
+        )
 
     summary = AlertDispatchSummary()
 
@@ -259,7 +255,7 @@ async def deliver_family_alert_notifications(
     ):
         recipient.delivery_provider = result.provider
         recipient.external_message_id = (
-        result.external_message_id
+          result.external_message_id
         )
         if result.status == "sent":
             recipient.delivery_status = "sent"
