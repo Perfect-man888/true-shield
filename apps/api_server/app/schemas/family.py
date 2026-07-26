@@ -257,3 +257,54 @@ class FamilyInvitationResponse(BaseModel):
     created_at: datetime
 
     updated_at: datetime
+
+class FamilyInvitationListItem(BaseModel):
+    """当前用户收到的家庭邀请。"""
+
+    id: uuid.UUID
+
+    family_id: uuid.UUID
+
+    family_name: str
+
+    inviter_user_id: uuid.UUID
+
+    inviter_display_name: str
+
+    invitee_email: EmailStr
+
+    role: FamilyRole
+
+    status: FamilyInvitationStatus
+
+    expires_at: datetime
+
+    created_at: datetime
+
+
+class FamilyInvitationListResponse(BaseModel):
+    """当前用户收到的邀请列表。"""
+
+    items: list[FamilyInvitationListItem] = Field(
+        default_factory=list,
+    )
+
+    total: int = Field(
+        ge=0,
+    )
+
+
+class FamilyInvitationAcceptResponse(BaseModel):
+    """接受家庭邀请后的响应。"""
+
+    invitation_id: uuid.UUID
+
+    family_id: uuid.UUID
+
+    family_name: str
+
+    role: FamilyRole
+
+    status: FamilyInvitationStatus
+
+    joined_at: datetime
