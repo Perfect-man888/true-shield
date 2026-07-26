@@ -468,6 +468,21 @@ async def test_failed_recipient_can_be_retried(
         )
     )
 
+    policy_response = await client.patch(
+        (
+            f"/api/v1/families/{family_id}"
+            "/alert-policy"
+        ),
+        headers=headers,
+        json={
+            "retry_cooldown_seconds": 0,
+        },
+      )
+
+    assert policy_response.status_code == 200, (
+        policy_response.text
+    )
+
     recipient_id = alert["recipients"][0]["id"]
 
     failed_response = await client.post(
@@ -625,3 +640,139 @@ async def test_outside_user_cannot_retry_failed_delivery(
         403,
         404,
     }
+
+async def test_retry_respects_cooldown(
+    client: AsyncClient,
+) -> None:
+    """冷却时间内不能连续重试失败通知。"""
+
+    headers, family_id, alert = (
+        await prepare_pending_alert(
+            client,
+            user_name="RetryCooldownOwner",
+        )
+    )
+
+    policy_response = await client.patch(
+        (
+            f"/api/v1/families/{family_id}"
+            "/alert-policy"
+        ),
+        headers=headers,
+        json={
+            "max_retry_attempts": 3,
+            "retry_cooldown_seconds": 60,
+        },
+    )
+
+    assert policy_response.status_code == 200, (
+        policy_response.text
+    )
+
+    recipient_id = alert["recipients"][0]["id"]
+
+    failed_response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}/dispatch"
+        ),
+        headers=headers,
+        json={
+            "simulated_failure_recipient_ids": [
+                recipient_id,
+            ],
+        },
+    )
+
+    assert failed_response.status_code == 200, (
+        failed_response.text
+    )
+    assert failed_response.json()["failed_count"] == 1
+
+    retry_response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}"
+            "/retry-failed"
+        ),
+        headers=headers,
+    )
+
+    assert retry_response.status_code == 429, (
+        retry_response.text
+    )
+
+    assert retry_response.json()["detail"] == (
+        "重试过于频繁，请稍后再试。"
+    )
+
+    retry_after = int(
+        retry_response.headers["retry-after"]
+    )
+
+    assert 1 <= retry_after <= 60
+
+async def test_retry_rejected_when_limit_reached(
+    client: AsyncClient,
+) -> None:
+    """最大重试次数为零时不能执行任何重试。"""
+
+    headers, family_id, alert = (
+        await prepare_pending_alert(
+            client,
+            user_name="RetryLimitOwner",
+        )
+    )
+
+    policy_response = await client.patch(
+        (
+            f"/api/v1/families/{family_id}"
+            "/alert-policy"
+        ),
+        headers=headers,
+        json={
+            "max_retry_attempts": 0,
+            "retry_cooldown_seconds": 0,
+        },
+    )
+
+    assert policy_response.status_code == 200, (
+        policy_response.text
+    )
+
+    recipient_id = alert["recipients"][0]["id"]
+
+    failed_response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}/dispatch"
+        ),
+        headers=headers,
+        json={
+            "simulated_failure_recipient_ids": [
+                recipient_id,
+            ],
+        },
+    )
+
+    assert failed_response.status_code == 200, (
+        failed_response.text
+    )
+    assert failed_response.json()["failed_count"] == 1
+
+    retry_response = await client.post(
+        (
+            f"/api/v1/families/{family_id}"
+            f"/alerts/{alert['id']}"
+            "/retry-failed"
+        ),
+        headers=headers,
+    )
+
+    assert retry_response.status_code == 409, (
+        retry_response.text
+    )
+
+    assert retry_response.json()["detail"] == (
+        "失败通知已达到最大重试次数。"
+    )

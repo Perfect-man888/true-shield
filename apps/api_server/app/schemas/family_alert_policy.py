@@ -49,6 +49,18 @@ class FamilyAlertPolicyUpdate(BaseModel):
         le=20,
     )
 
+    max_retry_attempts: int | None = Field(
+        default=None,
+        ge=0,
+        le=10,
+    )
+
+    retry_cooldown_seconds: int | None = Field(
+        default=None,
+        ge=0,
+        le=86400,
+    )
+
     @field_validator("enabled_source_types")
     @classmethod
     def validate_source_types(
@@ -103,6 +115,10 @@ class FamilyAlertPolicyResponse(BaseModel):
     ]
 
     max_recipients: int
+
+    max_retry_attempts: int
+
+    retry_cooldown_seconds: int
 
     created_at: datetime
 

@@ -27,6 +27,27 @@ class FamilyAlertPolicy(Base):
 
     __table_args__ = (
         CheckConstraint(
+            (
+                "max_retry_attempts >= 0 "
+                "AND max_retry_attempts <= 10"
+            ),
+            name=(
+                "ck_family_alert_policies_"
+                "max_retry_attempts"
+            ),
+        ),
+        CheckConstraint(
+            (
+                "retry_cooldown_seconds >= 0 "
+                "AND retry_cooldown_seconds <= 86400"
+            ),
+            name=(
+                "ck_family_alert_policies_"
+                "retry_cooldown_seconds"
+            ),
+        ),
+        
+        CheckConstraint(
             "minimum_risk_level IN ('low', 'medium', 'high')",
             name=(
                 "ck_family_alert_policies_"
@@ -95,6 +116,20 @@ class FamilyAlertPolicy(Base):
         nullable=False,
         default=3,
         server_default="3",
+    )
+
+    max_retry_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=3,
+        server_default="3",
+    )
+
+    retry_cooldown_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=60,
+        server_default="60",
     )
 
     created_at: Mapped[datetime] = mapped_column(

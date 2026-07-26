@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
+from math import ceil
 
 from fastapi import (
     APIRouter,
@@ -805,9 +807,145 @@ async def retry_failed_alert_deliveries(
             detail="当前没有需要重试的失败接收人。",
         )
 
+    policy = (
+        await get_or_create_family_alert_policy(
+            db,
+            family_id=family_id,
+        )
+    )
+
+    attempts = (
+        await list_family_alert_delivery_attempts(
+            db,
+            alert_id=alert.id,
+        )
+    )
+
+    latest_attempt_by_recipient = {}
+    maximum_attempt_number_by_recipient = {}
+
+    for attempt in attempts:
+        recipient_id = attempt.recipient_id
+
+        current_latest = (
+            latest_attempt_by_recipient.get(
+                recipient_id
+            )
+        )
+
+        if (
+            current_latest is None
+            or attempt.attempted_at
+            > current_latest.attempted_at
+        ):
+            latest_attempt_by_recipient[
+                recipient_id
+            ] = attempt
+
+        current_maximum = (
+            maximum_attempt_number_by_recipient
+            .get(
+                recipient_id,
+                0,
+            )
+        )
+
+        maximum_attempt_number_by_recipient[
+            recipient_id
+        ] = max(
+            current_maximum,
+            attempt.attempt_number,
+        )
+
+    retryable_recipients = []
+
+    for recipient in failed_recipients:
+        maximum_attempt_number = (
+            maximum_attempt_number_by_recipient
+            .get(
+                recipient.id,
+                0,
+            )
+        )
+
+        # attempt_number=1 表示首次发送，
+        # 所以减去 1 后才是已经执行的重试次数。
+        completed_retry_count = max(
+            maximum_attempt_number - 1,
+            0,
+        )
+
+        if (
+            completed_retry_count
+            >= policy.max_retry_attempts
+        ):
+            continue
+
+        retryable_recipients.append(recipient)
+
+    if not retryable_recipients:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="失败通知已达到最大重试次数。",
+        )
+
+    if policy.retry_cooldown_seconds > 0:
+        now = datetime.now(UTC)
+        remaining_seconds_list: list[int] = []
+
+        for recipient in retryable_recipients:
+            latest_attempt = (
+                latest_attempt_by_recipient.get(
+                    recipient.id
+                )
+            )
+
+            if latest_attempt is None:
+                continue
+
+            attempted_at = latest_attempt.attempted_at
+
+            # 兼容测试数据库可能返回的无时区时间。
+            if attempted_at.tzinfo is None:
+                attempted_at = attempted_at.replace(
+                    tzinfo=UTC
+                )
+
+            elapsed_seconds = (
+                now - attempted_at
+            ).total_seconds()
+
+            remaining_seconds = (
+                policy.retry_cooldown_seconds
+                - elapsed_seconds
+            )
+
+            if remaining_seconds > 0:
+                remaining_seconds_list.append(
+                    max(
+                        1,
+                        ceil(remaining_seconds),
+                    )
+                )
+
+        if remaining_seconds_list:
+            retry_after = max(
+                remaining_seconds_list
+            )
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_429_TOO_MANY_REQUESTS
+                ),
+                detail="重试过于频繁，请稍后再试。",
+                headers={
+                    "Retry-After": str(retry_after),
+                },
+            )
+
     dispatch_summary = (
-        await deliver_family_alert_notifications(
-            failed_recipients,
+          await deliver_family_alert_notifications(
+            retryable_recipients,
             title=alert.title,
             message=alert.summary,
             simulated_failure_recipient_ids=set(),
@@ -816,7 +954,7 @@ async def retry_failed_alert_deliveries(
 
     await record_family_alert_delivery_attempts(
         db,
-        recipients=failed_recipients,
+        recipients=retryable_recipients,
         attempted_recipient_ids=set(
             dispatch_summary.attempted_recipient_ids
         ),

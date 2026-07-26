@@ -55,6 +55,8 @@ async def get_or_create_family_alert_policy(
             "url",
         ],
         max_recipients=3,
+        max_retry_attempts=3,
+        retry_cooldown_seconds=60,
     )
 
     db.add(policy)
