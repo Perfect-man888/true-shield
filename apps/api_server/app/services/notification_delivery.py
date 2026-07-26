@@ -277,6 +277,32 @@ def build_notification_delivery_service(
             ],
         )
 
+    if selected_provider in {
+        "email",
+        "smtp",
+    }:
+        from app.services.email_notification_provider import (
+            SMTPEmailNotificationProvider,
+        )
+
+        return NotificationDeliveryService(
+            providers=[
+                SMTPEmailNotificationProvider(
+                    host=settings.smtp_host,
+                    port=settings.smtp_port,
+                    username=settings.smtp_username,
+                    password=settings.smtp_password,
+                    from_email=(
+                        settings.smtp_from_email
+                    ),
+                    use_tls=settings.smtp_use_tls,
+                    timeout_seconds=(
+                        settings.smtp_timeout_seconds
+                    ),
+                ),
+            ],
+        )
+
     raise ValueError(
         "不支持的通知服务商："
         f"{selected_provider}"

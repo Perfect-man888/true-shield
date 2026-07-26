@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     # Notification
     notification_provider: str = "simulated"
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
+    smtp_timeout_seconds: float = 10.0
+
     # Risk engine
     rule_version: str = "v0.1.0"
     model_bundle_version: str = "rules-only-v0.1.0"
