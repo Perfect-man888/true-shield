@@ -54,6 +54,9 @@ from app.services.family_alert_service import (
     build_family_alert_title,
     deliver_family_alert_notifications,
 )
+from app.services.push_notification import (
+    send_family_alert_push_safely,
+)
 
 router = APIRouter(
     prefix="/families",
@@ -216,6 +219,13 @@ async def create_alert_from_risk_event(
             ),
         ) from exc
 
+    await send_family_alert_push_safely(
+        db,
+        alert=alert,
+        event_type="created",
+        actor_display_name=current_user.display_name,
+    )
+
     return FamilyAlertResponse.model_validate(
         alert
     )
@@ -355,6 +365,13 @@ async def acknowledge_alert(
         user_id=current_user.id,
     )
 
+    await send_family_alert_push_safely(
+        db,
+        alert=alert,
+        event_type="acknowledged",
+        actor_display_name=current_user.display_name,
+    )
+
     return FamilyAlertResponse.model_validate(
         alert
     )
@@ -428,6 +445,13 @@ async def resolve_alert(
         alert=alert,
         user_id=current_user.id,
         resolution_note=payload.resolution_note,
+    )
+
+    await send_family_alert_push_safely(
+        db,
+        alert=alert,
+        event_type="resolved",
+        actor_display_name=current_user.display_name,
     )
 
     return FamilyAlertResponse.model_validate(

@@ -22,8 +22,11 @@ class RuleMatch(BaseModel):
     any: list[str] = Field(default_factory=list)
     all: list[str] = Field(default_factory=list)
     all_groups: list[list[str]] = Field(default_factory=list)
+    regex_any: list[str] = Field(default_factory=list)
+    regex_all: list[str] = Field(default_factory=list)
     exclude_any: list[str] = Field(default_factory=list)
     context: dict[str, Any] = Field(default_factory=dict)
+    min_matched_terms: int = Field(default=1, ge=1, le=20)
 
 
 class TextRiskRule(BaseModel):
@@ -165,6 +168,33 @@ class TextRiskAnalyzer:
         keyword: str,
     ) -> bool:
         return self._normalize(keyword) in normalized_text
+
+    @staticmethod
+    def _regex_matches(
+        text: str,
+        pattern: str,
+    ) -> list[str]:
+        """返回规则正则在原文中的非空命中。"""
+
+        try:
+            compiled = re.compile(
+                pattern,
+                flags=re.IGNORECASE,
+            )
+        except re.error as exc:
+            raise ValueError(
+                f"Invalid risk rule regex: {pattern}"
+            ) from exc
+
+        matches: list[str] = []
+
+        for match in compiled.finditer(text):
+            value = match.group(0).strip()
+
+            if value:
+                matches.append(value)
+
+        return list(dict.fromkeys(matches))
 
     @staticmethod
     def _find_term_positions(
@@ -309,6 +339,8 @@ class TextRiskAnalyzer:
             match.any
             or match.all
             or match.all_groups
+            or match.regex_any
+            or match.regex_all
             or match.context
         )
 
@@ -360,10 +392,46 @@ class TextRiskAnalyzer:
 
             matched_terms.extend(group_terms)
 
+        # regex_any 中至少命中一个表达式。
+        if match.regex_any:
+            regex_any_terms: list[str] = []
+
+            for pattern in match.regex_any:
+                regex_any_terms.extend(
+                    self._regex_matches(
+                        raw_text,
+                        pattern,
+                    )
+                )
+
+            if not regex_any_terms:
+                return None
+
+            matched_terms.extend(regex_any_terms)
+
+        # regex_all 中每个表达式都必须至少命中一次。
+        for pattern in match.regex_all:
+            pattern_terms = self._regex_matches(
+                raw_text,
+                pattern,
+            )
+
+            if not pattern_terms:
+                return None
+
+            matched_terms.extend(pattern_terms)
+
         if not has_condition:
             return None
 
-        return list(dict.fromkeys(matched_terms))
+        unique_terms = list(
+            dict.fromkeys(matched_terms)
+        )
+
+        if len(unique_terms) < match.min_matched_terms:
+            return None
+
+        return unique_terms
     @staticmethod
     def _stronger_level(
         current: RiskLevel | None,

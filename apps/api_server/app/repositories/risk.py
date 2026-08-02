@@ -52,6 +52,20 @@ async def create_risk_event(
 ) -> RiskEvent:
     """保存一次风险分析事件及其全部证据。"""
 
+    merged_source_metadata = dict(
+        source_metadata or {}
+    )
+
+    merged_source_metadata[
+        "analysis_engine"
+    ] = {
+        "analysis_mode": analysis.analysis_mode,
+        "engine_version": analysis.engine_version,
+        "ai_model": analysis.ai_model,
+        "ai_confidence": analysis.ai_confidence,
+        "ai_summary": analysis.ai_summary,
+    }
+
     event = RiskEvent(
         user_id=user_id,
         source_type=source_type,
@@ -60,7 +74,7 @@ async def create_risk_event(
             if source_text is None
             else source_text
         ),
-        source_metadata=source_metadata,
+        source_metadata=merged_source_metadata,
         risk_level=analysis.risk_level.value,
         risk_score=analysis.score,
 

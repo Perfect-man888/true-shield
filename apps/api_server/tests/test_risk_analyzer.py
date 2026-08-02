@@ -399,3 +399,41 @@ def test_police_anti_fraud_warning_does_not_trigger_combo_rule() -> None:
     assert result.risk_level == RiskLevel.LOW
     assert result.score == 0
     assert result.evidence == []
+
+def test_task_rebate_scam_is_detected() -> None:
+    result = analyze(
+        "做点赞任务可以返利，先充值完成最后一单，完成后本金和佣金一起返还。"
+    )
+
+    assert result.risk_level == RiskLevel.HIGH
+    assert {
+        evidence.rule_id
+        for evidence in result.evidence
+    } & {
+        "R-TEXT-016",
+        "R-COMBO-003",
+    }
+
+
+def test_training_refund_investment_chain_is_high_risk() -> None:
+    result = analyze(
+        "教育机构开始清退学费，请加入退费群，下载软件并认购基金办理退款。"
+    )
+
+    assert result.risk_level == RiskLevel.HIGH
+    assert "R-COMBO-004" in {
+        evidence.rule_id
+        for evidence in result.evidence
+    }
+
+
+def test_regex_detects_verification_code_number() -> None:
+    result = analyze(
+        "退款需要核验，请把验证码 839201 发给我。"
+    )
+
+    assert result.risk_level == RiskLevel.HIGH
+    assert "R-TEXT-030" in {
+        evidence.rule_id
+        for evidence in result.evidence
+    }

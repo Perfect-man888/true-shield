@@ -3,6 +3,8 @@ from __future__ import annotations
 import ipaddress
 from urllib.parse import (
     SplitResult,
+    parse_qsl,
+    unquote,
     urlsplit,
     urlunsplit,
 )
@@ -18,7 +20,7 @@ from app.schemas.risk_url import (
 class URLRiskAnalyzer:
     """基于 URL 结构特征分析链接风险。"""
 
-    RULE_VERSION = "url-1.0.0"
+    RULE_VERSION = "url-2.0.0"
 
     SHORTENER_DOMAINS = {
         "bit.ly",
@@ -63,6 +65,16 @@ class URLRiskAnalyzer:
         None,
         80,
         443,
+    }
+
+    SUSPICIOUS_FILE_EXTENSIONS = {
+        ".apk",
+        ".exe",
+        ".scr",
+        ".msi",
+        ".bat",
+        ".cmd",
+        ".jar",
     }
 
     def analyze(
@@ -322,6 +334,89 @@ class URLRiskAnalyzer:
                 )
             )
 
+        suspicious_extension = (
+            self._find_suspicious_file_extension(
+                parsed
+            )
+        )
+
+        if suspicious_extension is not None:
+            signals.append(
+                URLRiskSignal(
+                    signal_id="URL-013",
+                    category="download",
+                    title="链接指向可执行安装文件",
+                    score=40,
+                    explanation=(
+                        "链接路径或参数指向 APK、EXE 等"
+                        "可执行文件，可能诱导安装恶意软件。"
+                    ),
+                    details={
+                        "extension": suspicious_extension,
+                    },
+                )
+            )
+
+        nested_urls = self._find_nested_urls(parsed)
+
+        if nested_urls:
+            signals.append(
+                URLRiskSignal(
+                    signal_id="URL-014",
+                    category="redirect",
+                    title="链接参数中嵌套了其他网址",
+                    score=20,
+                    explanation=(
+                        "查询参数中包含另一个完整网址，"
+                        "可能用于隐藏最终跳转目标。"
+                    ),
+                    details={
+                        "nested_urls": nested_urls[:3],
+                    },
+                )
+            )
+
+        encoded_ratio = self._encoded_character_ratio(
+            prepared_url
+        )
+
+        if encoded_ratio >= 0.12:
+            signals.append(
+                URLRiskSignal(
+                    signal_id="URL-015",
+                    category="obfuscation",
+                    title="链接包含较多编码字符",
+                    score=15,
+                    explanation=(
+                        "链接中百分号编码比例较高，可能"
+                        "用于隐藏真实路径、参数或跳转地址。"
+                    ),
+                    details={
+                        "encoded_ratio": round(
+                            encoded_ratio,
+                            3,
+                        ),
+                    },
+                )
+            )
+
+        if self._contains_mixed_script_host(host):
+            signals.append(
+                URLRiskSignal(
+                    signal_id="URL-016",
+                    category="obfuscation",
+                    title="域名混用不同文字字符",
+                    score=30,
+                    explanation=(
+                        "域名同时混用拉丁字母和其他文字"
+                        "字符，可能用于构造视觉相似的仿冒域名。"
+                    ),
+                    details={
+                        "host": host,
+                    },
+                )
+            )
+
         score = min(
             100,
             sum(
@@ -426,6 +521,71 @@ class URLRiskAnalyzer:
             term
             for term in self.SUSPICIOUS_TERMS
             if term.lower() in searchable_text
+        )
+
+    @classmethod
+    def _find_suspicious_file_extension(
+        cls,
+        parsed: SplitResult,
+    ) -> str | None:
+        searchable = unquote(
+            f"{parsed.path}?{parsed.query}"
+        ).lower()
+
+        for extension in sorted(
+            cls.SUSPICIOUS_FILE_EXTENSIONS
+        ):
+            if extension in searchable:
+                return extension
+
+        return None
+
+    @staticmethod
+    def _find_nested_urls(
+        parsed: SplitResult,
+    ) -> list[str]:
+        nested: list[str] = []
+
+        for _, value in parse_qsl(
+            parsed.query,
+            keep_blank_values=True,
+        ):
+            decoded = unquote(value).strip()
+
+            if decoded.lower().startswith(
+                ("http://", "https://")
+            ):
+                nested.append(decoded)
+
+        return list(dict.fromkeys(nested))
+
+    @staticmethod
+    def _encoded_character_ratio(
+        url: str,
+    ) -> float:
+        if not url:
+            return 0.0
+
+        encoded_markers = url.count("%") * 3
+        return encoded_markers / len(url)
+
+    @staticmethod
+    def _contains_mixed_script_host(
+        host: str,
+    ) -> bool:
+        has_ascii_letter = any(
+            "a" <= character.lower() <= "z"
+            for character in host
+        )
+        has_non_ascii_letter = any(
+            ord(character) > 127
+            and character.isalpha()
+            for character in host
+        )
+
+        return (
+            has_ascii_letter
+            and has_non_ascii_letter
         )
 
     @staticmethod

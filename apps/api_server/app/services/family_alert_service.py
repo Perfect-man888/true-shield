@@ -20,6 +20,8 @@ SOURCE_TYPE_LABELS = {
     "text": "文本",
     "image": "图片",
     "url": "链接",
+    "voice": "语音",
+    "call": "通话",
 }
 
 

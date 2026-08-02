@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">TrueShield</string>
+    <string name="family_alert_notification_channel_id">family_alerts</string>
+</resources>

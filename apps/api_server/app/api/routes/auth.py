@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +8,11 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.schemas.auth import TokenResponse, UserRegister
+from app.schemas.password_reset import (
+    PasswordResetCodeRequest,
+    PasswordResetCodeResponse,
+    PasswordResetConfirmRequest,
+)
 from app.schemas.user import UserResponse
 from app.services.auth import (
     EmailAlreadyRegisteredError,
@@ -15,6 +20,12 @@ from app.services.auth import (
     RegistrationConflictError,
     authenticate_user,
     register_user,
+)
+from app.services.password_reset import (
+    InvalidPasswordResetCodeError,
+    PasswordReuseNotAllowedError,
+    confirm_password_reset,
+    request_password_reset_code,
 )
 
 router = APIRouter(prefix="/auth")
@@ -74,9 +85,66 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(user.id)
+    access_token = create_access_token(
+        user.id,
+        auth_version=user.auth_version,
+    )
 
     return TokenResponse(
         access_token=access_token,
         expires_in=settings.jwt_access_token_expire_minutes * 60,
+    )
+
+
+@router.post(
+    "/password-reset/request",
+    response_model=PasswordResetCodeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="申请密码重置验证码",
+)
+async def request_password_reset(
+    data: PasswordResetCodeRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> PasswordResetCodeResponse:
+    result = await request_password_reset_code(
+        session=session,
+        email=str(data.email),
+    )
+
+    return PasswordResetCodeResponse(
+        message=result.message,
+        expires_in=result.expires_in,
+        debug_code=result.debug_code,
+    )
+
+
+@router.post(
+    "/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="使用验证码重置密码",
+)
+async def reset_password(
+    data: PasswordResetConfirmRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    try:
+        await confirm_password_reset(
+            session=session,
+            email=str(data.email),
+            code=data.code,
+            new_password=data.new_password,
+        )
+    except InvalidPasswordResetCodeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码无效、已过期或尝试次数过多",
+        ) from error
+    except PasswordReuseNotAllowedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新密码不能与当前密码相同",
+        ) from error
+
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT,
     )

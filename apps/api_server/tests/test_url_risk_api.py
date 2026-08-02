@@ -90,7 +90,7 @@ async def test_user_can_analyze_and_save_safe_url(
     assert body["risk_level"] == "low"
     assert body["score"] == 0
     assert body["signals"] == []
-    assert body["rule_version"] == "url-1.0.0"
+    assert body["rule_version"] == "url-2.0.0"
 
     assert body["event_id"]
     assert body["created_at"]

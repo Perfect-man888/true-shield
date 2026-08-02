@@ -94,11 +94,53 @@ class TextRiskAnalysisResponse(BaseModel):
     """文本风险分析结果。"""
 
     risk_level: RiskLevel
+
+    # score 始终表示最终对用户展示和持久化的融合分数。
     score: int = Field(ge=0, le=100)
+
+    # 下面字段用于解释“规则分、AI 分、最终分”之间的关系。
+    # 旧记录或纯规则分析允许为空，保证接口向后兼容。
+    rule_score: int | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+    )
+    ai_score: int | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+    )
+    ai_risk_level: RiskLevel | None = None
+    fusion_applied: bool = False
+    fusion_reason: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+
     evidence: list[RiskEvidence]
     actions: list[str]
     disclaimer: str
     rule_version: str
+
+    analysis_mode: Literal[
+        "rules_only",
+        "rules_ai",
+    ] = "rules_only"
+
+    engine_version: str = "rules-1.0.0"
+
+    ai_model: str | None = None
+
+    ai_confidence: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+    )
+
+    ai_summary: str | None = Field(
+        default=None,
+        max_length=1_000,
+    )
 
 class PersistedTextRiskAnalysisResponse(
     TextRiskAnalysisResponse

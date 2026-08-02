@@ -10,6 +10,8 @@ from app.models.family_alert import (
 from app.models.family_alert_policy import (
     FamilyAlertPolicy,
 )
+from app.models.password_reset import PasswordResetCode
+from app.models.push_device import PushDevice
 from app.models.risk import (
     RiskEvent,
     RiskFeedback,
@@ -20,6 +22,8 @@ from app.models.user import User
 
 __all__ = [
     "User",
+    "PasswordResetCode",
+    "PushDevice",
     "RiskEvent",
     "RiskSignal",
     "RiskFeedback",

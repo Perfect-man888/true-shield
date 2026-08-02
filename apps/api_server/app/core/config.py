@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
 
+    # Password reset
+    password_reset_code_expire_minutes: int = 10
+    password_reset_resend_interval_seconds: int = 60
+    password_reset_max_failed_attempts: int = 5
+
     # Notification
     notification_provider: str = "simulated"
 
@@ -69,9 +74,40 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     smtp_timeout_seconds: float = 10.0
 
+    # Firebase Cloud Messaging
+    firebase_push_enabled: bool = False
+    firebase_project_id: str = ""
+    firebase_credentials_file: str = ""
+
+    # Local voice transcription (FunASR + ModelScope)
+    voice_transcription_enabled: bool = True
+    voice_funasr_model: str = "iic/SenseVoiceSmall"
+    voice_funasr_vad_model: str = (
+        "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
+    )
+    voice_funasr_hub: str = "ms"
+    voice_funasr_device: str = "cpu"
+    voice_funasr_cache_root: str = "models/modelscope"
+    voice_funasr_cpu_threads: int = 4
+    voice_funasr_batch_size_seconds: int = 60
+    voice_audio_max_bytes: int = 20 * 1024 * 1024
+    voice_audio_max_duration_seconds: int = 180
+
     # Risk engine
     rule_version: str = "v0.1.0"
     model_bundle_version: str = "rules-only-v0.1.0"
+
+    # Local semantic AI review (Ollama)
+    risk_ai_enabled: bool = False
+    risk_ai_provider: str = "ollama"
+    risk_ai_base_url: str = "http://127.0.0.1:11434"
+    risk_ai_model: str = "qwen3:1.7b"
+    risk_ai_timeout_seconds: float = 25.0
+    risk_ai_max_text_chars: int = 6_000
+    risk_ai_keep_alive: str = "5m"
+    risk_ai_min_confidence: float = 0.72
+    risk_ai_high_confidence: float = 0.85
+    risk_ai_allow_remote: bool = False
 
     # Frontend
     frontend_url: str = "http://localhost:5173"

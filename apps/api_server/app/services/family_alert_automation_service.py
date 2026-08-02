@@ -30,6 +30,9 @@ from app.services.family_alert_service import (
     build_family_alert_title,
     deliver_family_alert_notifications,
 )
+from app.services.push_notification import (
+    send_family_alert_push_safely,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +459,12 @@ async def execute_family_alert_automation_plan(
             title=alert_title,
             summary=alert_summary,
             recipients=recipient_payloads,
+        )
+
+        await send_family_alert_push_safely(
+            db,
+            alert=alert,
+            event_type="created",
         )
 
         dispatched = False

@@ -1,0 +1,48 @@
+version: call-guard-1.1.0
+
+# 第一版使用可人工维护的本地号码规则库。
+# 这里保留开发测试号码，并补充非常用卫星、国际网络和国际付费号段。
+# 号段命中只表示需要谨慎核实，不代表号码已经被确认属于诈骗。
+exact_numbers:
+  - number: "+8612345678901"
+    score: 90
+    title: "测试高风险号码"
+    explanation: "该号码位于真信盾开发测试风险库中。"
+
+prefix_rules:
+  - prefix: "+870"
+    score: 30
+    title: "非常用国际卫星号段"
+    explanation: "该号段并不必然是诈骗号码，但普通家庭用户接听前应提高警惕。"
+  - prefix: "+871"
+    score: 30
+    title: "非常用国际卫星号段"
+    explanation: "该号段并不必然是诈骗号码，但普通家庭用户接听前应提高警惕。"
+  - prefix: "+872"
+    score: 30
+    title: "非常用国际卫星号段"
+    explanation: "该号段并不必然是诈骗号码，但普通家庭用户接听前应提高警惕。"
+  - prefix: "+873"
+    score: 30
+    title: "非常用国际卫星号段"
+    explanation: "该号段并不必然是诈骗号码，但普通家庭用户接听前应提高警惕。"
+  - prefix: "+874"
+    score: 30
+    title: "非常用国际卫星号段"
+    explanation: "该号段并不必然是诈骗号码，但普通家庭用户接听前应提高警惕。"
+  - prefix: "+881"
+    score: 30
+    title: "非常用国际卫星号段"
+    explanation: "该号段并不必然是诈骗号码，但普通家庭用户接听前应提高警惕。"
+  - prefix: "+882"
+    score: 30
+    title: "非常用国际网络号段"
+    explanation: "该号段并不必然是诈骗号码，但普通家庭用户接听前应提高警惕。"
+  - prefix: "+883"
+    score: 30
+    title: "非常用国际网络号段"
+    explanation: "该号段并不必然是诈骗号码，但普通家庭用户接听前应提高警惕。"
+  - prefix: "+979"
+    score: 35
+    title: "国际付费业务号段"
+    explanation: "该号段可能产生较高资费或用于国际付费服务，回拨前应核实来源。"

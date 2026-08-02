@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+import tempfile
 import uuid
+from pathlib import Path
 
 from fastapi import (
     APIRouter,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
     UploadFile,
@@ -14,8 +18,10 @@ from fastapi import (
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import Response
 
 from app.api.dependencies import get_current_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.risk import RiskEvent
 from app.models.user import User
@@ -37,6 +43,16 @@ from app.schemas.risk import (
     RiskEvidence,
     RiskLevel,
     TextRiskAnalysisRequest,
+    TextRiskAnalysisResponse,
+)
+from app.schemas.risk_dashboard import (
+    RiskDashboardResponse,
+)
+from app.schemas.risk_engine import (
+    RiskEngineStatusResponse,
+)
+from app.schemas.risk_report import (
+    RiskReportSummaryResponse,
 )
 from app.schemas.risk_feedback import (
     RiskFeedbackCreate,
@@ -55,6 +71,10 @@ from app.schemas.risk_url import (
     URLRedirectInspection,
     URLRiskAnalysisRequest,
 )
+from app.schemas.risk_voice import (
+    VoiceRiskAnalysisRequest,
+    VoiceRiskAnalysisResponse,
+)
 from app.services.family_alert_automation_service import (
     trigger_family_alert_automation_safely,
 )
@@ -66,7 +86,26 @@ from app.services.ocr_service import (
     OCRServiceError,
     evaluate_ocr_quality,
 )
+from app.services.ai_semantic_risk import (
+    OllamaReviewerConfig,
+    OllamaSemanticRiskReviewer,
+)
+from app.services.hybrid_risk_analyzer import (
+    HybridRiskAnalyzer,
+    HybridRiskConfig,
+)
 from app.services.risk_analyzer import TextRiskAnalyzer
+from app.services.risk_dashboard_service import (
+    FamilyDashboardAccessError,
+    RiskDashboardService,
+)
+from app.services.risk_report_pdf import (
+    RiskReportPdfRenderer,
+)
+from app.services.risk_report_service import (
+    FamilyRiskReportAccessError,
+    RiskReportService,
+)
 from app.services.risk_feedback_service import (
     OCRFeedbackNotAllowedError,
     get_owned_risk_event,
@@ -90,12 +129,55 @@ from app.services.url_redirect_risk_service import (
 from app.services.url_risk_analyzer import (
     URLRiskAnalyzer,
 )
+from app.services.voice_transcription import (
+    VoiceAudioTooLongError,
+    VoiceNoSpeechError,
+    VoiceTranscriptionError,
+    VoiceTranscriptionUnavailableError,
+    voice_transcription_service,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/risk",
 )
 
-text_risk_analyzer = TextRiskAnalyzer()
+text_rule_analyzer = TextRiskAnalyzer()
+
+semantic_risk_reviewer = OllamaSemanticRiskReviewer(
+    OllamaReviewerConfig(
+        enabled=settings.risk_ai_enabled,
+        base_url=settings.risk_ai_base_url,
+        model=settings.risk_ai_model,
+        timeout_seconds=(
+            settings.risk_ai_timeout_seconds
+        ),
+        max_text_chars=(
+            settings.risk_ai_max_text_chars
+        ),
+        keep_alive=settings.risk_ai_keep_alive,
+        allow_remote=(
+            settings.risk_ai_allow_remote
+        ),
+    )
+)
+
+hybrid_risk_analyzer = HybridRiskAnalyzer(
+    rule_analyzer=text_rule_analyzer,
+    reviewer=semantic_risk_reviewer,
+    config=HybridRiskConfig(
+        enabled=settings.risk_ai_enabled,
+        model=settings.risk_ai_model,
+        minimum_confidence=(
+            settings.risk_ai_min_confidence
+        ),
+        high_confidence=(
+            settings.risk_ai_high_confidence
+        ),
+    ),
+)
+
 url_risk_analyzer = URLRiskAnalyzer()
 url_redirect_resolver = URLRedirectResolver()
 ocr_service = OCRService()
@@ -103,6 +185,172 @@ ocr_service = OCRService()
 risk_feedback_statistics_service = (
     RiskFeedbackStatisticsService()
 )
+
+risk_dashboard_service = RiskDashboardService()
+risk_report_service = RiskReportService()
+risk_report_pdf_renderer = RiskReportPdfRenderer()
+
+VOICE_ALLOWED_CONTENT_TYPES = {
+    "audio/mp4",
+    "audio/m4a",
+    "audio/aac",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/ogg",
+    "application/octet-stream",
+}
+
+
+def _risk_fusion_metadata(
+    analysis: TextRiskAnalysisResponse,
+) -> dict[str, object]:
+    """
+    构造可随风险事件一起保存的评分来源。
+
+    使用独立的 risk_fusion 节点，避免依赖 repositories/risk.py
+    的具体实现；图片、语音原有 source_metadata 也会被保留。
+    """
+
+    return jsonable_encoder(
+        {
+            "rule_score": analysis.rule_score,
+            "ai_score": analysis.ai_score,
+            "ai_risk_level": analysis.ai_risk_level,
+            "fusion_applied": analysis.fusion_applied,
+            "fusion_reason": analysis.fusion_reason,
+            "final_score": analysis.score,
+        }
+    )
+
+
+def _with_risk_fusion_metadata(
+    source_metadata: dict[str, object] | None,
+    analysis: TextRiskAnalysisResponse,
+) -> dict[str, object]:
+    metadata = dict(source_metadata or {})
+    metadata["risk_fusion"] = _risk_fusion_metadata(
+        analysis
+    )
+    return metadata
+
+
+def _voice_audio_suffix(upload: UploadFile) -> str:
+    filename = (upload.filename or "voice.m4a").lower()
+    suffix = Path(filename).suffix
+    if suffix in {".m4a", ".mp4", ".aac", ".mp3", ".wav", ".ogg"}:
+        return suffix
+    return ".m4a"
+
+
+async def _save_voice_upload_to_temp(upload: UploadFile) -> tuple[Path, int]:
+    content_type = (upload.content_type or "application/octet-stream").lower()
+    if content_type not in VOICE_ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="不支持该录音格式，请上传 m4a、mp4、aac、mp3、wav 或 ogg 音频。",
+        )
+
+    temp_file = tempfile.NamedTemporaryFile(
+        prefix="true-shield-voice-",
+        suffix=_voice_audio_suffix(upload),
+        delete=False,
+    )
+    temp_path = Path(temp_file.name)
+    total_bytes = 0
+
+    try:
+        while chunk := await upload.read(1024 * 1024):
+            total_bytes += len(chunk)
+            if total_bytes > settings.voice_audio_max_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=(
+                        "录音文件过大，最大允许 "
+                        f"{settings.voice_audio_max_bytes // (1024 * 1024)} MB。"
+                    ),
+                )
+            temp_file.write(chunk)
+    except Exception:
+        temp_file.close()
+        temp_path.unlink(missing_ok=True)
+        raise
+    finally:
+        await upload.close()
+
+    temp_file.close()
+    if total_bytes < 256:
+        temp_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="录音文件为空或内容过短，请重新录制。",
+        )
+
+    return temp_path, total_bytes
+
+
+async def _persist_voice_analysis(
+    *,
+    db: AsyncSession,
+    current_user: User,
+    transcript: str,
+    language: str,
+    recognition_provider: str,
+    recognition_confidence: float | None,
+    language_probability: float | None,
+    duration_seconds: float | None,
+    transcription_model: str | None,
+    audio_size_bytes: int | None,
+    audio_content_type: str | None,
+) -> VoiceRiskAnalysisResponse:
+    text_request = TextRiskAnalysisRequest(text=transcript)
+    analysis = await hybrid_risk_analyzer.analyze(text_request)
+
+    voice_source_metadata = _with_risk_fusion_metadata(
+        {
+            "voice": jsonable_encoder(
+                {
+                    "language": language,
+                    "recognition_provider": recognition_provider,
+                    "recognition_confidence": recognition_confidence,
+                    "language_probability": language_probability,
+                    "duration_seconds": duration_seconds,
+                    "transcription_model": transcription_model,
+                    "audio_size_bytes": audio_size_bytes,
+                    "audio_content_type": audio_content_type,
+                    "raw_audio_stored": False,
+                }
+            ),
+        },
+        analysis,
+    )
+
+    event = await create_risk_event(
+        db,
+        user_id=current_user.id,
+        request=text_request,
+        analysis=analysis,
+        source_type="voice",
+        source_text=transcript,
+        source_metadata=voice_source_metadata,
+    )
+
+    await trigger_family_alert_automation_safely(db, event=event)
+
+    return VoiceRiskAnalysisResponse(
+        **analysis.model_dump(),
+        source_type="voice",
+        transcript=transcript,
+        language=language,
+        recognition_provider=recognition_provider,
+        recognition_confidence=recognition_confidence,
+        language_probability=language_probability,
+        duration_seconds=duration_seconds,
+        transcription_model=transcription_model,
+        audio_size_bytes=audio_size_bytes,
+        event_id=event.id,
+        created_at=event.created_at,
+    )
 
 
 def event_to_list_item(
@@ -146,6 +394,22 @@ def event_to_detail(
         for signal in sorted_signals
     ]
 
+    source_metadata = event.source_metadata or {}
+    engine_metadata = source_metadata.get(
+        "analysis_engine",
+        {},
+    )
+    fusion_metadata = source_metadata.get(
+        "risk_fusion",
+        {},
+    )
+
+    if not isinstance(engine_metadata, dict):
+        engine_metadata = {}
+
+    if not isinstance(fusion_metadata, dict):
+        fusion_metadata = {}
+
     return RiskEventDetailResponse(
         event_id=event.id,
         created_at=event.created_at,
@@ -155,10 +419,45 @@ def event_to_detail(
         summary=event.summary,
         risk_level=RiskLevel(event.risk_level),
         score=event.risk_score,
+        rule_score=fusion_metadata.get(
+            "rule_score"
+        ),
+        ai_score=fusion_metadata.get(
+            "ai_score"
+        ),
+        ai_risk_level=fusion_metadata.get(
+            "ai_risk_level"
+        ),
+        fusion_applied=bool(
+            fusion_metadata.get(
+                "fusion_applied",
+                False,
+            )
+        ),
+        fusion_reason=fusion_metadata.get(
+            "fusion_reason"
+        ),
         evidence=evidence,
         actions=event.actions,
         disclaimer=event.disclaimer,
         rule_version=event.rule_version,
+        analysis_mode=str(
+            engine_metadata.get(
+                "analysis_mode",
+                "rules_only",
+            )
+        ),
+        engine_version=str(
+            engine_metadata.get(
+                "engine_version",
+                "rules-1.0.0",
+            )
+        ),
+        ai_model=engine_metadata.get("ai_model"),
+        ai_confidence=engine_metadata.get(
+            "ai_confidence"
+        ),
+        ai_summary=engine_metadata.get("ai_summary"),
     )
 
 
@@ -168,7 +467,8 @@ def event_to_detail(
     status_code=status.HTTP_200_OK,
     summary="分析并保存可疑聊天文本",
     description=(
-        "根据 YAML 风险规则分析聊天文本，"
+        "先由 YAML 可解释规则库分析聊天文本，"
+        "可选使用本地 AI 进行语义复核，"
         "返回风险等级、风险分数、命中证据和行动建议，"
         "同时将本次风险分析保存到数据库。"
     ),
@@ -180,7 +480,7 @@ async def analyze_text_risk(
 ) -> PersistedTextRiskAnalysisResponse:
     """分析文本并保存风险事件。"""
 
-    analysis = text_risk_analyzer.analyze(request)
+    analysis = await hybrid_risk_analyzer.analyze(request)
 
     event = await create_risk_event(
         db,
@@ -189,11 +489,15 @@ async def analyze_text_risk(
         analysis=analysis,
         source_type="text",
         source_text=request.text,
+        source_metadata=_with_risk_fusion_metadata(
+            None,
+            analysis,
+        ),
     )
 
     await trigger_family_alert_automation_safely(
-    db,
-    event=event,
+        db,
+        event=event,
     )
 
     return PersistedTextRiskAnalysisResponse(
@@ -281,23 +585,26 @@ async def analyze_image_risk(
         text=ocr_result.text,
     )
 
-    analysis = text_risk_analyzer.analyze(
+    analysis = await hybrid_risk_analyzer.analyze(
         text_request
     )
 
-    image_source_metadata = {
-        "image": jsonable_encoder(
-            {
-                "filename": image.filename,
-                "content_type": image.content_type,
-                "image_width": ocr_result.width,
-                "image_height": ocr_result.height,
-                "extracted_text": ocr_result.text,
-                "ocr_lines": ocr_result.lines,
-                "ocr_quality": ocr_quality,
-            }
-        ),
-    }
+    image_source_metadata = _with_risk_fusion_metadata(
+        {
+            "image": jsonable_encoder(
+                {
+                    "filename": image.filename,
+                    "content_type": image.content_type,
+                    "image_width": ocr_result.width,
+                    "image_height": ocr_result.height,
+                    "extracted_text": ocr_result.text,
+                    "ocr_lines": ocr_result.lines,
+                    "ocr_quality": ocr_quality,
+                }
+            ),
+        },
+        analysis,
+    )
 
     event = await create_risk_event(
         db,
@@ -310,8 +617,8 @@ async def analyze_image_risk(
     )
 
     await trigger_family_alert_automation_safely(
-    db,
-    event=event,
+        db,
+        event=event,
     )
 
     return ImageRiskAnalysisResponse(
@@ -344,6 +651,99 @@ async def analyze_image_risk(
         event_id=event.id,
         created_at=event.created_at,
     )
+
+@router.post(
+    "/voice/analyze",
+    response_model=VoiceRiskAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="分析人工确认的语音转写文本",
+    description=(
+        "用于用户修正本地模型转写结果后的重新检测。"
+        "正式录音流程请使用 /voice/audio/analyze。"
+    ),
+)
+async def analyze_voice_risk(
+    request: VoiceRiskAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> VoiceRiskAnalysisResponse:
+    return await _persist_voice_analysis(
+        db=db,
+        current_user=current_user,
+        transcript=request.transcript,
+        language=request.language,
+        recognition_provider=request.recognition_provider,
+        recognition_confidence=request.recognition_confidence,
+        language_probability=None,
+        duration_seconds=request.duration_seconds,
+        transcription_model=request.transcription_model,
+        audio_size_bytes=None,
+        audio_content_type=None,
+    )
+
+
+@router.post(
+    "/voice/audio/analyze",
+    response_model=VoiceRiskAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="上传录音、本地转写并执行风险检测",
+    description=(
+        "接收 Android 录制的音频，使用服务器本地 faster-whisper 模型转写，"
+        "随后执行反诈风险分析。临时音频在请求完成后立即删除，不长期保存。"
+    ),
+)
+async def analyze_voice_audio(
+    audio: UploadFile = File(..., description="m4a/mp4/aac/mp3/wav/ogg 录音文件"),
+    language: str = Form(default="zh-CN"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> VoiceRiskAnalysisResponse:
+    temp_path, audio_size_bytes = await _save_voice_upload_to_temp(audio)
+    audio_content_type = audio.content_type or "application/octet-stream"
+
+    try:
+        transcription = await run_in_threadpool(
+            voice_transcription_service.transcribe,
+            temp_path,
+            requested_language=language,
+        )
+    except VoiceTranscriptionUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except VoiceAudioTooLongError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+    except VoiceNoSpeechError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except VoiceTranscriptionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    return await _persist_voice_analysis(
+        db=db,
+        current_user=current_user,
+        transcript=transcription.transcript,
+        language=transcription.language,
+        recognition_provider=transcription.provider,
+        recognition_confidence=transcription.recognition_confidence,
+        language_probability=transcription.language_probability,
+        duration_seconds=transcription.duration_seconds,
+        transcription_model=transcription.model_name,
+        audio_size_bytes=audio_size_bytes,
+        audio_content_type=audio_content_type,
+    )
+
 
 @router.post(
     "/url/analyze",
@@ -437,8 +837,8 @@ async def analyze_url_risk(
     )
 
     await trigger_family_alert_automation_safely(
-    db,
-    event=event,
+        db,
+        event=event,
     )
 
     return PersistedURLRiskAnalysisResponse(
@@ -493,6 +893,223 @@ async def get_risk_events(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/engine/status",
+    response_model=RiskEngineStatusResponse,
+    status_code=status.HTTP_200_OK,
+    summary="获取风险分析引擎状态",
+    description=(
+        "返回当前规则库版本、启用规则数量以及"
+        "本地 AI 语义复核服务是否可用。"
+    ),
+)
+async def get_risk_engine_status(
+    current_user: User = Depends(get_current_user),
+) -> RiskEngineStatusResponse:
+    """获取当前风险分析引擎状态。"""
+
+    del current_user
+
+    total_rules = len(
+        text_rule_analyzer.rule_set.rules
+    )
+    enabled_rules = sum(
+        1
+        for rule in text_rule_analyzer.rule_set.rules
+        if rule.enabled
+    )
+    ai_available = (
+        await semantic_risk_reviewer.is_available()
+    )
+
+    return RiskEngineStatusResponse(
+        analysis_mode=(
+            "rules_ai"
+            if settings.risk_ai_enabled
+            and ai_available
+            else "rules_only"
+        ),
+        engine_version=(
+            hybrid_risk_analyzer.ENGINE_VERSION
+        ),
+        rule_version=(
+            text_rule_analyzer.rule_set.version
+        ),
+        total_rules=total_rules,
+        enabled_rules=enabled_rules,
+        ai_enabled=settings.risk_ai_enabled,
+        ai_provider=settings.risk_ai_provider,
+        ai_model=settings.risk_ai_model,
+        ai_available=ai_available,
+        privacy_mode=(
+            "local_only"
+            if not settings.risk_ai_allow_remote
+            else "remote_allowed"
+        ),
+    )
+
+
+@router.get(
+    "/dashboard",
+    response_model=RiskDashboardResponse,
+    status_code=status.HTTP_200_OK,
+    summary="获取个人或家庭风险统计仪表盘",
+    description=(
+        "默认统计当前用户自己的风险事件与相关告警。"
+        "传入 family_id 后，统计该家庭有效成员的风险事件"
+        "以及该家庭的告警处理情况。"
+    ),
+)
+async def get_risk_dashboard(
+    period_days: int = Query(
+        default=7,
+        ge=1,
+        le=90,
+        description="近期趋势包含的天数",
+    ),
+    family_id: uuid.UUID | None = Query(
+        default=None,
+        description="可选家庭编号；不传时统计个人数据",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RiskDashboardResponse:
+    """获取个人或家庭风险统计仪表盘。"""
+
+    try:
+        return await risk_dashboard_service.get_dashboard(
+            db,
+            user_id=current_user.id,
+            period_days=period_days,
+            family_id=family_id,
+        )
+    except FamilyDashboardAccessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="家庭不存在或无权查看该家庭统计。",
+        ) from exc
+
+
+@router.get(
+    "/reports/summary",
+    response_model=RiskReportSummaryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="生成个人或家庭风险报告预览",
+    description=(
+        "返回选定周期内的脱敏风险统计、主要证据、重点事件和家庭告警。"
+        "不返回原始录音、图片、完整号码或完整账号。"
+    ),
+)
+async def get_risk_report_summary(
+    period_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="报告统计周期天数",
+    ),
+    family_id: uuid.UUID | None = Query(
+        default=None,
+        description="可选家庭编号；不传时生成个人报告",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RiskReportSummaryResponse:
+    try:
+        return await risk_report_service.build_report(
+            db,
+            current_user=current_user,
+            period_days=period_days,
+            family_id=family_id,
+        )
+    except FamilyRiskReportAccessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="家庭不存在或无权生成该家庭报告。",
+        ) from exc
+
+
+@router.get(
+    "/reports/pdf",
+    status_code=status.HTTP_200_OK,
+    summary="导出个人或家庭风险报告 PDF",
+    description=(
+        "即时生成脱敏 PDF，不在服务器长期保存导出文件。"
+    ),
+)
+async def download_risk_report_pdf(
+    period_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="报告统计周期天数",
+    ),
+    family_id: uuid.UUID | None = Query(
+        default=None,
+        description="可选家庭编号；不传时生成个人报告",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    try:
+        report = await risk_report_service.build_report(
+            db,
+            current_user=current_user,
+            period_days=period_days,
+            family_id=family_id,
+        )
+    except FamilyRiskReportAccessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="家庭不存在或无权生成该家庭报告。",
+        ) from exc
+
+    try:
+        pdf_bytes = await run_in_threadpool(
+            risk_report_pdf_renderer.render,
+            report,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to render risk report PDF: report_code=%s",
+            report.report_code,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "PDF 生成失败。请查看后端日志中的具体异常后重试。"
+            ),
+        ) from exc
+
+    if not pdf_bytes.startswith(b"%PDF-"):
+        logger.error(
+            "Risk report renderer returned invalid PDF bytes: report_code=%s size=%s",
+            report.report_code,
+            len(pdf_bytes),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PDF 生成结果无效，请稍后重试。",
+        )
+
+    filename = (
+        "true-shield-family-risk-report.pdf"
+        if family_id is not None
+        else "true-shield-personal-risk-report.pdf"
+    )
+    # 风险报告体积较小，直接返回完整响应比流式响应在部分 Android
+    # 设备和本地开发代理环境中更稳定。
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Length": str(len(pdf_bytes)),
+        },
     )
 
 
@@ -723,7 +1340,7 @@ async def reanalyze_corrected_ocr_text(
         text=feedback.corrected_text,
     )
 
-    corrected_analysis = text_risk_analyzer.analyze(
+    corrected_analysis = await hybrid_risk_analyzer.analyze(
         corrected_request
     )
 

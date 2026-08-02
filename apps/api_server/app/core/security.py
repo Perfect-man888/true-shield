@@ -24,6 +24,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
 
 def create_access_token(
     subject: UUID | str,
+    auth_version: int,
     expires_delta: timedelta | None = None,
 ) -> str:
     """创建 JWT 访问令牌。"""
@@ -39,6 +40,7 @@ def create_access_token(
         "iat": now,
         "exp": expire,
         "jti": str(uuid4()),
+        "ver": auth_version,
     }
 
     return jwt.encode(

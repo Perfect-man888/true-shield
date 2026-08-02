@@ -107,3 +107,32 @@ def test_invalid_url_raises_value_error() -> None:
         analyze(
             "https:///only-path"
         )
+
+def test_executable_download_link_is_high_risk() -> None:
+    result = analyzer.analyze(
+        URLRiskAnalysisRequest(
+            url="http://198.51.100.8/download/security-update.apk",
+        )
+    )
+
+    assert result.risk_level == RiskLevel.HIGH
+    assert "URL-013" in {
+        signal.signal_id
+        for signal in result.signals
+    }
+
+
+def test_nested_redirect_url_is_detected() -> None:
+    result = analyzer.analyze(
+        URLRiskAnalysisRequest(
+            url=(
+                "https://example.com/go?target="
+                "https%3A%2F%2Funknown.example%2Flogin"
+            ),
+        )
+    )
+
+    assert "URL-014" in {
+        signal.signal_id
+        for signal in result.signals
+    }

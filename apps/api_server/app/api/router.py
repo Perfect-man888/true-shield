@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.call_guard import router as call_guard_router
 from app.api.routes.families import router as families_router
 from app.api.routes.family_alerts import (
     router as family_alerts_router,
@@ -24,6 +25,10 @@ api_router.include_router(
 
 api_router.include_router(
     users_router,
+)
+
+api_router.include_router(
+    call_guard_router,
 )
 
 api_router.include_router(

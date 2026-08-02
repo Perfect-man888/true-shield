@@ -39,6 +39,11 @@ async def get_current_user(
             raise credentials_exception
 
         user_id = UUID(subject)
+
+        token_auth_version = payload.get("ver", 1)
+
+        if not isinstance(token_auth_version, int):
+            raise credentials_exception
     except (InvalidTokenError, ValueError, TypeError) as error:
         raise credentials_exception from error
 
@@ -46,6 +51,9 @@ async def get_current_user(
     user = await repository.get_by_id(user_id)
 
     if user is None:
+        raise credentials_exception
+
+    if user.auth_version != token_auth_version:
         raise credentials_exception
 
     if user.status != "active":
