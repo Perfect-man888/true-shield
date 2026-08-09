@@ -76,6 +76,46 @@ async def test_call_guard_requires_login(
     assert response.status_code == 401
 
 
+async def test_authenticated_user_can_download_versioned_rules(
+    db_client: AsyncClient,
+) -> None:
+    headers = await register_and_login(db_client, name="CallGuardRuleUser")
+    response = await db_client.get(
+        "/api/v1/call-guard/rules",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["version"] == "call-guard-1.1.0"
+    assert len(body["checksum"]) == 64
+    assert body["updated_at"] < body["expires_at"]
+    assert any(
+        rule["match_type"] == "exact" and rule["confirmed"] is True
+        for rule in body["rules"]
+    )
+
+
+async def test_report_is_pending_and_does_not_expose_raw_number(
+    db_client: AsyncClient,
+) -> None:
+    headers = await register_and_login(db_client, name="CallGuardReportUser")
+    raw_number = "+8613800138000"
+    response = await db_client.post(
+        "/api/v1/call-guard/reports",
+        headers=headers,
+        json={
+            "phone_number": raw_number,
+            "report_type": "suspicious",
+            "note": "对方自称客服并索要验证码。",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["masked_number"] != raw_number
+    assert raw_number not in response.text
+
+
 async def test_test_number_is_high_risk_and_not_persisted(
     db_client: AsyncClient,
 ) -> None:

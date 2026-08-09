@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import (
     BaseModel,
@@ -12,7 +12,7 @@ from pydantic import (
 )
 
 
-class FamilyAlertPolicyRiskLevel(str, Enum):
+class FamilyAlertPolicyRiskLevel(StrEnum):
     """自动告警最低风险等级。"""
 
     LOW = "low"
@@ -20,7 +20,7 @@ class FamilyAlertPolicyRiskLevel(str, Enum):
     HIGH = "high"
 
 
-class FamilyAlertPolicySourceType(str, Enum):
+class FamilyAlertPolicySourceType(StrEnum):
     """允许自动触发告警的风险来源。"""
 
     TEXT = "text"

@@ -51,7 +51,7 @@ def _utc(value: datetime) -> datetime:
 
 
 def _hash_code(*, user_id: object, code: str) -> str:
-    payload = f"{user_id}:{code}".encode("utf-8")
+    payload = f"{user_id}:{code}".encode()
     return hmac.new(
         settings.jwt_secret_key.encode("utf-8"),
         payload,

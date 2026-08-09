@@ -1,3 +1,4 @@
+from app.models.call_guard import CallGuardReport
 from app.models.family import (
     Family,
     FamilyInvitation,
@@ -34,4 +35,5 @@ __all__ = [
     "FamilyAlert",
     "FamilyAlertRecipient",
     "FamilyAlertPolicy",
+    "CallGuardReport",
 ]

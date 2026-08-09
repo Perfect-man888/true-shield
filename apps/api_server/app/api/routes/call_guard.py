@@ -17,6 +17,9 @@ from app.repositories.risk import create_risk_event
 from app.schemas.call_guard import (
     CallGuardHelpRequest,
     CallGuardHelpResponse,
+    CallGuardReportRequest,
+    CallGuardReportResponse,
+    CallGuardRuleBundle,
     CallNumberAnalyzeRequest,
     CallNumberAnalyzeResponse,
 )
@@ -39,6 +42,36 @@ router = APIRouter(
 )
 
 call_guard_service = CallGuardService()
+
+
+@router.get(
+    "/rules",
+    response_model=CallGuardRuleBundle,
+    summary="获取 Android 离线筛查规则包",
+)
+async def get_call_guard_rules(
+    current_user: User = Depends(get_current_user),
+) -> CallGuardRuleBundle:
+    del current_user
+    return call_guard_service.get_rule_bundle()
+
+
+@router.post(
+    "/reports",
+    response_model=CallGuardReportResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="提交号码风险或误报反馈",
+)
+async def create_call_guard_report(
+    payload: CallGuardReportRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CallGuardReportResponse:
+    return await call_guard_service.create_report(
+        db,
+        user_id=current_user.id,
+        request=payload,
+    )
 
 
 @router.post(

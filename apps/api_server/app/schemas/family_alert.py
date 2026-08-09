@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import (
     BaseModel,
@@ -12,7 +12,7 @@ from pydantic import (
 )
 
 
-class FamilyAlertStatus(str, Enum):
+class FamilyAlertStatus(StrEnum):
     """家庭告警处理状态。"""
 
     PENDING = "pending"
@@ -21,7 +21,7 @@ class FamilyAlertStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class AlertDeliveryChannel(str, Enum):
+class AlertDeliveryChannel(StrEnum):
     """家庭告警发送渠道。"""
 
     IN_APP = "in_app"
@@ -30,7 +30,7 @@ class AlertDeliveryChannel(str, Enum):
     EMAIL = "email"
 
 
-class AlertDeliveryStatus(str, Enum):
+class AlertDeliveryStatus(StrEnum):
     """家庭告警发送状态。"""
 
     PENDING = "pending"

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from enum import Enum
+from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class CallDirection(str, Enum):
+class CallDirection(StrEnum):
     """电话方向。"""
 
     INCOMING = "incoming"
@@ -14,7 +15,7 @@ class CallDirection(str, Enum):
     UNKNOWN = "unknown"
 
 
-class CallerVerificationStatus(str, Enum):
+class CallerVerificationStatus(StrEnum):
     """运营商号码验证状态。"""
 
     PASSED = "passed"
@@ -22,7 +23,7 @@ class CallerVerificationStatus(str, Enum):
     NOT_VERIFIED = "not_verified"
 
 
-class CallGuardRiskLevel(str, Enum):
+class CallGuardRiskLevel(StrEnum):
     """通话护航风险等级。"""
 
     LOW = "low"
@@ -37,6 +38,71 @@ class CallGuardSignal(BaseModel):
     title: str
     score: int = Field(ge=0, le=100)
     explanation: str
+    source: str = "local_rule"
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    confirmed: bool = False
+
+
+class CallGuardRuleItem(BaseModel):
+    """可安全下发到客户端的一条号码规则。"""
+
+    rule_id: str
+    match_type: str
+    value: str
+    score: int = Field(ge=0, le=100)
+    title: str
+    explanation: str
+    source: str
+    confidence: float = Field(ge=0, le=1)
+    confirmed: bool = False
+
+
+class CallGuardRuleBundle(BaseModel):
+    """Android 离线筛查使用的版本化规则包。"""
+
+    version: str
+    updated_at: datetime
+    checksum: str
+    expires_at: datetime
+    rules: list[CallGuardRuleItem]
+    disclaimer: str
+
+
+class CallGuardReportType(StrEnum):
+    SUSPICIOUS = "suspicious"
+    SCAM = "scam"
+    SAFE = "safe"
+    FALSE_POSITIVE = "false_positive"
+
+
+class CallGuardReportRequest(BaseModel):
+    phone_number: str = Field(min_length=1, max_length=64)
+    report_type: CallGuardReportType
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("phone_number")
+    @classmethod
+    def normalize_report_phone_number(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("电话号码不能为空。")
+        return cleaned
+
+    @field_validator("note")
+    @classmethod
+    def normalize_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class CallGuardReportResponse(BaseModel):
+    id: uuid.UUID
+    report_type: CallGuardReportType
+    masked_number: str
+    status: str
+    created_at: datetime
+    message: str
 
 
 class CallNumberAnalyzeRequest(BaseModel):

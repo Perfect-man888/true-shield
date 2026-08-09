@@ -22,6 +22,45 @@ data class CallGuardSignalDto(
     val title: String,
     val score: Int,
     val explanation: String,
+    val source: String = "local_rule",
+    val confidence: Double = 0.5,
+    val confirmed: Boolean = false,
+)
+
+data class CallGuardRuleItemDto(
+    @SerializedName("rule_id") val ruleId: String,
+    @SerializedName("match_type") val matchType: String,
+    val value: String,
+    val score: Int,
+    val title: String,
+    val explanation: String,
+    val source: String,
+    val confidence: Double,
+    val confirmed: Boolean = false,
+)
+
+data class CallGuardRuleBundleDto(
+    val version: String,
+    @SerializedName("updated_at") val updatedAt: String,
+    val checksum: String,
+    @SerializedName("expires_at") val expiresAt: String,
+    val rules: List<CallGuardRuleItemDto>,
+    val disclaimer: String,
+)
+
+data class CallGuardReportRequest(
+    @SerializedName("phone_number") val phoneNumber: String,
+    @SerializedName("report_type") val reportType: String,
+    val note: String? = null,
+)
+
+data class CallGuardReportResponse(
+    val id: String,
+    @SerializedName("report_type") val reportType: String,
+    @SerializedName("masked_number") val maskedNumber: String,
+    val status: String,
+    @SerializedName("created_at") val createdAt: String,
+    val message: String,
 )
 
 /**

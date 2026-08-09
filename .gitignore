@@ -49,6 +49,7 @@ yarn-error.log*
 # ==================================================
 
 .gradle/
+.gradle-ascii/
 **/build/
 
 local.properties
@@ -140,3 +141,6 @@ logs/
 
 # Local code archive
 /apps/api_server.zip
+
+# Generated competition document previews
+/docs/competition/word_render*/

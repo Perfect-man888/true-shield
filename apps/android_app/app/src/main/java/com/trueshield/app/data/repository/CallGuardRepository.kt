@@ -5,6 +5,9 @@ import com.trueshield.app.data.model.callguard.CallGuardHelpRequest
 import com.trueshield.app.data.model.callguard.CallGuardHelpResponse
 import com.trueshield.app.data.model.callguard.CallNumberAnalyzeRequest
 import com.trueshield.app.data.model.callguard.CallNumberAnalyzeResponse
+import com.trueshield.app.data.model.callguard.CallGuardRuleBundleDto
+import com.trueshield.app.data.model.callguard.CallGuardReportRequest
+import com.trueshield.app.data.model.callguard.CallGuardReportResponse
 import com.trueshield.app.data.network.CallGuardApi
 import retrofit2.Response
 import java.io.IOException
@@ -27,6 +30,20 @@ sealed interface CallGuardOperationResult<out T> {
 class CallGuardRepository(
     private val callGuardApi: CallGuardApi,
 ) {
+
+    suspend fun getRules(): CallGuardOperationResult<CallGuardRuleBundleDto> =
+        execute(
+            request = { callGuardApi.getRules() },
+            defaultMessage = "号码风险规则同步失败。",
+        )
+
+    suspend fun createReport(
+        request: CallGuardReportRequest,
+    ): CallGuardOperationResult<CallGuardReportResponse> =
+        execute(
+            request = { callGuardApi.createReport(request) },
+            defaultMessage = "号码反馈提交失败。",
+        )
 
     suspend fun analyzeNumber(
         request: CallNumberAnalyzeRequest,
