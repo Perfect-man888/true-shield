@@ -343,8 +343,15 @@ fun TrueShieldNavHost(
                     callGuardViewModel::onPhoneNumberChange,
                 onAnalyzeNumber =
                     callGuardViewModel::analyzeNumber,
-                onRequestFamilyHelp =
-                    callGuardViewModel::requestFamilyHelp,
+                  onRequestFamilyHelp =
+                      callGuardViewModel::requestFamilyHelp,
+                  onSyncRules = callGuardViewModel::syncRules,
+                  onSilenceHighRiskChange =
+                      callGuardViewModel::setSilenceHighRisk,
+                  onBlockConfirmedRiskChange =
+                      callGuardViewModel::setBlockConfirmedRisk,
+                  onSubmitReport =
+                      callGuardViewModel::submitNumberReport,
                 onSessionExpired = {
                     callGuardViewModel
                         .consumeSessionExpired()

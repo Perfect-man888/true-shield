@@ -2,6 +2,7 @@ package com.trueshield.app.callguard
 
 import com.trueshield.app.data.model.callguard.CallGuardSignalDto
 import com.trueshield.app.data.model.callguard.CallNumberAnalyzeResponse
+import com.trueshield.app.data.model.callguard.CallGuardRuleBundleDto
 
 /**
  * 5 秒来电响应窗口内使用的本地兜底判断。
@@ -14,6 +15,7 @@ object CallGuardLocalEvaluator {
         phoneNumber: String,
         direction: String,
         verificationStatus: String,
+        ruleBundle: CallGuardRuleBundleDto? = null,
     ): CallNumberAnalyzeResponse {
         val normalized = normalize(phoneNumber)
         val signals = mutableListOf<CallGuardSignalDto>()
@@ -26,6 +28,8 @@ object CallGuardLocalEvaluator {
                 title = "隐藏或未知号码",
                 score = 45,
                 explanation = "无法在本机完成号码身份核验。",
+                source = "android_system",
+                confidence = 0.7,
             )
         }
 
@@ -36,6 +40,8 @@ object CallGuardLocalEvaluator {
                 title = "运营商号码验证失败",
                 score = 65,
                 explanation = "该号码可能存在伪造或异常。",
+                source = "carrier_verification",
+                confidence = 0.9,
             )
         } else if (verificationStatus == "passed") {
             score -= 20
@@ -48,7 +54,34 @@ object CallGuardLocalEvaluator {
                 title = "陌生来电",
                 score = 20,
                 explanation = "接听后不要透露验证码、银行卡或身份证信息。",
+                source = "safety_baseline",
+                confidence = 0.3,
             )
+        }
+
+        ruleBundle?.rules
+            ?.filter { rule ->
+                when (rule.matchType) {
+                    "exact" -> normalized == normalize(rule.value)
+                    "prefix" -> normalized.startsWith(normalize(rule.value))
+                    else -> false
+                }
+            }
+            ?.forEach { rule ->
+                score += rule.score
+                signals += CallGuardSignalDto(
+                    signalId = rule.ruleId,
+                    title = rule.title,
+                    score = rule.score,
+                    explanation = rule.explanation,
+                    source = rule.source,
+                    confidence = rule.confidence,
+                    confirmed = rule.confirmed,
+                )
+            }
+
+        if (verificationStatus == "failed") {
+            score = score.coerceAtLeast(75)
         }
 
         score = score.coerceIn(0, 100)
@@ -87,10 +120,18 @@ object CallGuardLocalEvaluator {
         if (text.isBlank()) {
             return "unknown"
         }
-        return text.replace(" ", "")
+        val compact = text.replace(" ", "")
             .replace("-", "")
             .replace("(", "")
             .replace(")", "")
+        return if (
+            compact.startsWith("+86") &&
+            compact.removePrefix("+86").length == 11
+        ) {
+            compact.removePrefix("+86")
+        } else {
+            compact
+        }
     }
 
     private fun mask(value: String): String {

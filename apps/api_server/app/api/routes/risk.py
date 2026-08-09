@@ -51,9 +51,6 @@ from app.schemas.risk_dashboard import (
 from app.schemas.risk_engine import (
     RiskEngineStatusResponse,
 )
-from app.schemas.risk_report import (
-    RiskReportSummaryResponse,
-)
 from app.schemas.risk_feedback import (
     RiskFeedbackCreate,
     RiskFeedbackResponse,
@@ -66,6 +63,9 @@ from app.schemas.risk_reanalysis import (
     RiskAnalysisComparisonResponse,
     RiskReanalysisSnapshotResponse,
 )
+from app.schemas.risk_report import (
+    RiskReportSummaryResponse,
+)
 from app.schemas.risk_url import (
     PersistedURLRiskAnalysisResponse,
     URLRedirectInspection,
@@ -75,8 +75,16 @@ from app.schemas.risk_voice import (
     VoiceRiskAnalysisRequest,
     VoiceRiskAnalysisResponse,
 )
+from app.services.ai_semantic_risk import (
+    OllamaReviewerConfig,
+    OllamaSemanticRiskReviewer,
+)
 from app.services.family_alert_automation_service import (
     trigger_family_alert_automation_safely,
+)
+from app.services.hybrid_risk_analyzer import (
+    HybridRiskAnalyzer,
+    HybridRiskConfig,
 )
 from app.services.ocr_service import (
     OCRImageTooLargeError,
@@ -86,25 +94,10 @@ from app.services.ocr_service import (
     OCRServiceError,
     evaluate_ocr_quality,
 )
-from app.services.ai_semantic_risk import (
-    OllamaReviewerConfig,
-    OllamaSemanticRiskReviewer,
-)
-from app.services.hybrid_risk_analyzer import (
-    HybridRiskAnalyzer,
-    HybridRiskConfig,
-)
 from app.services.risk_analyzer import TextRiskAnalyzer
 from app.services.risk_dashboard_service import (
     FamilyDashboardAccessError,
     RiskDashboardService,
-)
-from app.services.risk_report_pdf import (
-    RiskReportPdfRenderer,
-)
-from app.services.risk_report_service import (
-    FamilyRiskReportAccessError,
-    RiskReportService,
 )
 from app.services.risk_feedback_service import (
     OCRFeedbackNotAllowedError,
@@ -117,6 +110,13 @@ from app.services.risk_feedback_statistics_service import (
 )
 from app.services.risk_reanalysis_service import (
     compare_risk_analyses,
+)
+from app.services.risk_report_pdf import (
+    RiskReportPdfRenderer,
+)
+from app.services.risk_report_service import (
+    FamilyRiskReportAccessError,
+    RiskReportService,
 )
 from app.services.url_redirect_resolver import (
     UnsafeURLTargetError,

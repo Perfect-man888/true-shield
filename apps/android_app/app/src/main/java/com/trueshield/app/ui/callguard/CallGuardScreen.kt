@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -50,6 +51,10 @@ fun CallGuardScreen(
     onPhoneNumberChange: (String) -> Unit,
     onAnalyzeNumber: () -> Unit,
     onRequestFamilyHelp: () -> Unit,
+    onSyncRules: () -> Unit,
+    onSilenceHighRiskChange: (Boolean) -> Unit,
+    onBlockConfirmedRiskChange: (Boolean) -> Unit,
+    onSubmitReport: (String) -> Unit,
     onSessionExpired: () -> Unit,
 ) {
     FirstUseGuideDialog(
@@ -132,6 +137,13 @@ fun CallGuardScreen(
 
         PrivacyCard()
 
+        ProtectionSettingsCard(
+            state = state,
+            onSyncRules = onSyncRules,
+            onSilenceHighRiskChange = onSilenceHighRiskChange,
+            onBlockConfirmedRiskChange = onBlockConfirmedRiskChange,
+        )
+
         FamilySelectionCard(
             state = state,
             onRefreshFamilies = onRefreshFamilies,
@@ -151,6 +163,8 @@ fun CallGuardScreen(
                 isSendingHelp = state.isSendingHelp,
                 helpSent = state.helpSent,
                 onRequestFamilyHelp = onRequestFamilyHelp,
+                onSubmitReport = onSubmitReport,
+                isSubmittingReport = state.isSubmittingReport,
             )
         }
 
@@ -169,6 +183,61 @@ fun CallGuardScreen(
         }
 
         Spacer(modifier = Modifier.height(20.dp))
+    }
+}
+
+@Composable
+private fun ProtectionSettingsCard(
+    state: CallGuardUiState,
+    onSyncRules: () -> Unit,
+    onSilenceHighRiskChange: (Boolean) -> Unit,
+    onBlockConfirmedRiskChange: (Boolean) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("离线号码库与防护策略", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Text("规则版本：${state.ruleVersion ?: "尚未同步"}")
+            state.ruleUpdatedAt?.let { Text("更新时间：$it") }
+            state.ruleExpiresAt?.let { Text("有效期至：$it") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("高风险来电静音", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = state.silenceHighRisk,
+                    onCheckedChange = onSilenceHighRiskChange,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("拦截已确认风险号码")
+                    Text(
+                        "仅匹配经复核的精确号码规则；陌生来电和用户举报不会自动拦截。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = state.blockConfirmedRisk,
+                    onCheckedChange = onBlockConfirmedRiskChange,
+                )
+            }
+            OutlinedButton(
+                onClick = onSyncRules,
+                enabled = !state.isSyncingRules,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (state.isSyncingRules) "正在同步…" else "立即同步号码规则")
+            }
+        }
     }
 }
 
@@ -388,6 +457,8 @@ private fun NumberResultCard(
     isSendingHelp: Boolean,
     helpSent: Boolean,
     onRequestFamilyHelp: () -> Unit,
+    onSubmitReport: (String) -> Unit,
+    isSubmittingReport: Boolean,
 ) {
     val levelText = when (result.riskLevel) {
         "high" -> "高风险"
@@ -434,7 +505,28 @@ private fun NumberResultCard(
                 )
                 result.signals.forEach { signal ->
                     Text("• ${signal.title}：${signal.explanation}")
+                    Text(
+                        "  来源：${signal.source} · 置信度 ${(signal.confidence * 100).toInt()}%"
+                            + if (signal.confirmed) " · 已复核" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { onSubmitReport("suspicious") },
+                    enabled = !isSubmittingReport,
+                    modifier = Modifier.weight(1f),
+                ) { Text("举报可疑") }
+                OutlinedButton(
+                    onClick = { onSubmitReport("false_positive") },
+                    enabled = !isSubmittingReport,
+                    modifier = Modifier.weight(1f),
+                ) { Text("反馈误报") }
             }
 
             Button(

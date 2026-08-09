@@ -22,6 +22,10 @@ class CallGuardActionReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent,
     ) {
+        if (intent.action == ACTION_DISMISS_REMINDER) {
+            CallGuardNotificationHelper.cancelRiskNotification(context)
+            return
+        }
         if (intent.action != ACTION_REQUEST_HELP) {
             return
         }
@@ -121,6 +125,8 @@ class CallGuardActionReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_REQUEST_HELP =
             "com.trueshield.app.action.CALL_GUARD_HELP"
+        const val ACTION_DISMISS_REMINDER =
+            "com.trueshield.app.action.CALL_GUARD_DISMISS"
 
         const val EXTRA_PHONE_NUMBER = "call_guard_phone_number"
         const val EXTRA_DIRECTION = "call_guard_direction"

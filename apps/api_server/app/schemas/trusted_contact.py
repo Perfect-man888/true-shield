@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import (
     BaseModel,
@@ -14,14 +14,14 @@ from pydantic import (
 )
 
 
-class TrustedContactStatus(str, Enum):
+class TrustedContactStatus(StrEnum):
     """可信联系人状态。"""
 
     ACTIVE = "active"
     DISABLED = "disabled"
 
 
-class TrustedContactChannel(str, Enum):
+class TrustedContactChannel(StrEnum):
     """可信联系渠道。"""
 
     PHONE = "phone"

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class RiskDashboardScope(str, Enum):
+class RiskDashboardScope(StrEnum):
     """风险仪表盘统计范围。"""
 
     PERSONAL = "personal"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import (
     BaseModel,
@@ -15,7 +15,7 @@ from pydantic import (
 from app.schemas.risk import RiskLevel
 
 
-class RiskFeedbackType(str, Enum):
+class RiskFeedbackType(StrEnum):
     """用户可以提交的风险反馈类型。"""
 
     ACCURATE = "accurate"

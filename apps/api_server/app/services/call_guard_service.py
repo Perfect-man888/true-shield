@@ -1,22 +1,32 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import re
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.models.call_guard import CallGuardReport
 from app.models.trusted_contact import TrustedContact
 from app.schemas.call_guard import (
     CallDirection,
+    CallerVerificationStatus,
+    CallGuardReportRequest,
+    CallGuardReportResponse,
     CallGuardRiskLevel,
+    CallGuardRuleBundle,
+    CallGuardRuleItem,
     CallGuardSignal,
     CallNumberAnalyzeRequest,
     CallNumberAnalyzeResponse,
-    CallerVerificationStatus,
 )
 
 RULE_FILE = (
@@ -34,6 +44,11 @@ class PhoneRule:
     score: int
     title: str
     explanation: str
+    rule_id: str
+    match_type: str
+    source: str
+    confidence: float
+    confirmed: bool
 
 
 class CallGuardService:
@@ -43,6 +58,8 @@ class CallGuardService:
         self.rule_version = "call-guard-1.0.0"
         self.exact_rules: list[PhoneRule] = []
         self.prefix_rules: list[PhoneRule] = []
+        self.updated_at = datetime.now(UTC)
+        self.valid_days = 30
         self._load_rules()
 
     def _load_rules(self) -> None:
@@ -56,6 +73,12 @@ class CallGuardService:
         self.rule_version = str(
             raw.get("version") or self.rule_version
         )
+        raw_updated_at = str(raw.get("updated_at") or "")
+        if raw_updated_at:
+            self.updated_at = datetime.fromisoformat(
+                raw_updated_at.replace("Z", "+00:00")
+            )
+        self.valid_days = max(1, int(raw.get("valid_days", 30)))
         self.exact_rules = [
             PhoneRule(
                 value=self.normalize_number(
@@ -66,6 +89,11 @@ class CallGuardService:
                 explanation=str(
                     item.get("explanation", "号码命中风险规则。")
                 ),
+                rule_id=str(item.get("rule_id") or "PHONE-EXACT"),
+                match_type="exact",
+                source=str(item.get("source") or "maintained_rule"),
+                confidence=float(item.get("confidence", 0.5)),
+                confirmed=bool(item.get("confirmed", False)),
             )
             for item in raw.get("exact_numbers", [])
             if item.get("number")
@@ -80,10 +108,78 @@ class CallGuardService:
                 explanation=str(
                     item.get("explanation", "号码号段需要谨慎核实。")
                 ),
+                rule_id=str(item.get("rule_id") or "PHONE-PREFIX"),
+                match_type="prefix",
+                source=str(item.get("source") or "maintained_rule"),
+                confidence=float(item.get("confidence", 0.5)),
+                confirmed=bool(item.get("confirmed", False)),
             )
             for item in raw.get("prefix_rules", [])
             if item.get("prefix")
         ]
+
+    def get_rule_bundle(self) -> CallGuardRuleBundle:
+        rules = [
+            CallGuardRuleItem(
+                rule_id=rule.rule_id,
+                match_type=rule.match_type,
+                value=rule.value,
+                score=rule.score,
+                title=rule.title,
+                explanation=rule.explanation,
+                source=rule.source,
+                confidence=rule.confidence,
+                confirmed=rule.confirmed,
+            )
+            for rule in [*self.exact_rules, *self.prefix_rules]
+        ]
+        payload = [rule.model_dump(mode="json") for rule in rules]
+        checksum = hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest()
+        return CallGuardRuleBundle(
+            version=self.rule_version,
+            updated_at=self.updated_at,
+            expires_at=self.updated_at + timedelta(days=self.valid_days),
+            checksum=checksum,
+            rules=rules,
+            disclaimer=(
+                "规则命中仅表示需要谨慎核验；未经复核的用户举报不会自动加入规则库。"
+            ),
+        )
+
+    async def create_report(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: uuid.UUID,
+        request: CallGuardReportRequest,
+    ) -> CallGuardReportResponse:
+        number = self.normalize_number(request.phone_number)
+        fingerprint = hmac.new(
+            settings.jwt_secret_key.encode(),
+            number.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        report = CallGuardReport(
+            user_id=user_id,
+            number_fingerprint=fingerprint,
+            masked_number=self.mask_number(number),
+            report_type=request.report_type.value,
+            note=request.note,
+            status="pending",
+        )
+        db.add(report)
+        await db.commit()
+        await db.refresh(report)
+        return CallGuardReportResponse(
+            id=report.id,
+            report_type=request.report_type,
+            masked_number=report.masked_number,
+            status=report.status,
+            created_at=report.created_at,
+            message="反馈已提交并进入复核队列，不会直接改变号码风险等级。",
+        )
 
     @staticmethod
     def normalize_number(value: str) -> str:
@@ -172,6 +268,10 @@ class CallGuardService:
             title: str,
             signal_score: int,
             explanation: str,
+            *,
+            source: str = "system_signal",
+            confidence: float = 0.5,
+            confirmed: bool = False,
         ) -> None:
             nonlocal score
             score += signal_score
@@ -181,6 +281,9 @@ class CallGuardService:
                     title=title,
                     score=min(100, signal_score),
                     explanation=explanation,
+                    source=source,
+                    confidence=confidence,
+                    confirmed=confirmed,
                 )
             )
 
@@ -225,6 +328,9 @@ class CallGuardService:
                     rule.title,
                     rule.score,
                     rule.explanation,
+                    source=rule.source,
+                    confidence=rule.confidence,
+                    confirmed=rule.confirmed,
                 )
 
         for rule in self.prefix_rules:
@@ -234,6 +340,9 @@ class CallGuardService:
                     rule.title,
                     rule.score,
                     rule.explanation,
+                    source=rule.source,
+                    confidence=rule.confidence,
+                    confirmed=rule.confirmed,
                 )
 
         if (

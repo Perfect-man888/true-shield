@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import (
     BaseModel,
@@ -14,14 +14,14 @@ from pydantic import (
 )
 
 
-class FamilyStatus(str, Enum):
+class FamilyStatus(StrEnum):
     """家庭组状态。"""
 
     ACTIVE = "active"
     ARCHIVED = "archived"
 
 
-class FamilyRole(str, Enum):
+class FamilyRole(StrEnum):
     """家庭成员角色。"""
 
     OWNER = "owner"
@@ -29,7 +29,7 @@ class FamilyRole(str, Enum):
     MEMBER = "member"
 
 
-class FamilyMemberStatus(str, Enum):
+class FamilyMemberStatus(StrEnum):
     """家庭成员状态。"""
 
     ACTIVE = "active"
@@ -179,7 +179,7 @@ class FamilyMemberListResponse(BaseModel):
         ge=0,
     )
 
-class FamilyInvitationStatus(str, Enum):
+class FamilyInvitationStatus(StrEnum):
     """家庭邀请状态。"""
 
     PENDING = "pending"

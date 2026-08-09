@@ -9,6 +9,7 @@ import com.trueshield.app.TrueShieldApplication
 import com.trueshield.app.callguard.CallGuardStore
 import com.trueshield.app.data.model.callguard.CallGuardHelpRequest
 import com.trueshield.app.data.model.callguard.CallNumberAnalyzeRequest
+import com.trueshield.app.data.model.callguard.CallGuardReportRequest
 import com.trueshield.app.data.repository.CallGuardOperationResult
 import com.trueshield.app.data.repository.CallGuardRepository
 import com.trueshield.app.data.repository.FamilyOperationResult
@@ -54,6 +55,8 @@ class CallGuardViewModel(
 
     fun loadInitial() {
         refreshRoleStatus()
+        loadLocalGuardSettings()
+        syncRules()
 
         if (
             _uiState.value.initialized ||
@@ -63,6 +66,82 @@ class CallGuardViewModel(
         }
 
         loadFamilies()
+    }
+
+    private fun loadLocalGuardSettings() {
+        val bundle = store.getRuleBundle()
+        _uiState.value = _uiState.value.copy(
+            ruleVersion = bundle?.version,
+            ruleUpdatedAt = bundle?.updatedAt,
+            ruleExpiresAt = bundle?.expiresAt,
+            silenceHighRisk = store.shouldSilenceHighRisk(),
+            blockConfirmedRisk = store.shouldBlockConfirmedRisk(),
+        )
+    }
+
+    fun syncRules() {
+        if (_uiState.value.isSyncingRules) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSyncingRules = true)
+            when (val result = callGuardRepository.getRules()) {
+                is CallGuardOperationResult.Success -> {
+                    store.saveRuleBundle(result.data)
+                    _uiState.value = _uiState.value.copy(
+                        isSyncingRules = false,
+                        ruleVersion = result.data.version,
+                        ruleUpdatedAt = result.data.updatedAt,
+                        ruleExpiresAt = result.data.expiresAt,
+                        successMessage = "号码风险规则已更新。",
+                    )
+                }
+                is CallGuardOperationResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isSyncingRules = false,
+                        sessionExpired = result.requiresLogin,
+                        errorMessage =
+                            if (store.getRuleBundle() == null) result.message else null,
+                    )
+                }
+            }
+        }
+    }
+
+    fun setSilenceHighRisk(enabled: Boolean) {
+        store.setSilenceHighRisk(enabled)
+        _uiState.value = _uiState.value.copy(silenceHighRisk = enabled)
+    }
+
+    fun setBlockConfirmedRisk(enabled: Boolean) {
+        store.setBlockConfirmedRisk(enabled)
+        _uiState.value = _uiState.value.copy(blockConfirmedRisk = enabled)
+    }
+
+    fun submitNumberReport(reportType: String) {
+        val number = _uiState.value.analyzedPhoneNumber ?: return
+        if (_uiState.value.isSubmittingReport) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSubmittingReport = true)
+            when (
+                val result = callGuardRepository.createReport(
+                    CallGuardReportRequest(
+                        phoneNumber = number,
+                        reportType = reportType,
+                    ),
+                )
+            ) {
+                is CallGuardOperationResult.Success ->
+                    _uiState.value = _uiState.value.copy(
+                        isSubmittingReport = false,
+                        successMessage = result.data.message,
+                    )
+                is CallGuardOperationResult.Error ->
+                    _uiState.value = _uiState.value.copy(
+                        isSubmittingReport = false,
+                        errorMessage = result.message,
+                        sessionExpired = result.requiresLogin,
+                    )
+            }
+        }
     }
 
     fun refreshRoleStatus() {

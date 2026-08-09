@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from html import escape
 import re
+from html import escape
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -12,7 +12,6 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (
-    KeepTogether,
     LongTable,
     PageBreak,
     Paragraph,
@@ -208,19 +207,22 @@ class RiskReportPdfRenderer:
         story.extend(
             self._section(
                 "六、安全建议",
-                [
-                    Paragraph(
-                        "1. 遇到转账、验证码、屏幕共享、安装未知应用或所谓安全账户要求时，立即暂停操作。",
-                        styles["BodyCN"],
-                    ),
-                    Paragraph(
-                        "2. 通过官方公开号码、原有聊天渠道或可信联系人独立核验，不使用对方提供的联系方式。",
-                        styles["BodyCN"],
-                    ),
-                    Paragraph(
-                        "3. 已发生资金损失时，立即联系银行止付，并保存脱敏后的必要证据用于报警或平台申诉。",
-                        styles["BodyCN"],
-                    ),
+        [
+            Paragraph(
+                "1. 遇到转账、验证码、屏幕共享、安装未知应用或所谓安全账户要求时，"
+                "立即暂停操作。",
+                styles["BodyCN"],
+            ),
+            Paragraph(
+                "2. 通过官方公开号码、原有聊天渠道或可信联系人独立核验，"
+                "不使用对方提供的联系方式。",
+                styles["BodyCN"],
+            ),
+            Paragraph(
+                "3. 已发生资金损失时，立即联系银行止付，"
+                "并保存脱敏后的必要证据用于报警或平台申诉。",
+                styles["BodyCN"],
+            ),
                 ],
                 styles,
             )

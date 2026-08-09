@@ -104,9 +104,22 @@ object CallGuardNotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setAutoCancel(false)
-            .setOngoing(false)
-            .setTimeoutAfter(5 * 60 * 1000L)
+            .setOngoing(true)
             .setContentIntent(contentIntent)
+
+        val dismissIntent = PendingIntent.getBroadcast(
+            context,
+            9412,
+            Intent(context, CallGuardActionReceiver::class.java).apply {
+                action = CallGuardActionReceiver.ACTION_DISMISS_REMINDER
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        builder.addAction(
+            R.drawable.ic_shield_notification,
+            "结束提醒",
+            dismissIntent,
+        )
 
         if (canRequestHelp) {
             val helpIntent = PendingIntent.getBroadcast(

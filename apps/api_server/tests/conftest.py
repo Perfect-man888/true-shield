@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
@@ -13,6 +14,29 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models import RiskEvent, RiskSignal, User  # noqa: F401
+
+SLOW_TEST_MODULES = {
+    "test_ai_semantic_risk_recheck.py",
+    "test_ocr_service.py",
+    "test_push_notification.py",
+    "test_risk_image_api.py",
+    "test_risk_report_pdf_renderer.py",
+    "test_risk_voice_api.py",
+    "test_voice_transcription.py",
+}
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Classify tests so local and CI runs can select a predictable scope."""
+
+    for item in items:
+        module_name = item.path.name
+        if module_name in SLOW_TEST_MODULES:
+            item.add_marker(pytest.mark.slow)
+        elif "_api" in module_name or "auth" in module_name or "users" in module_name:
+            item.add_marker(pytest.mark.integration)
+        else:
+            item.add_marker(pytest.mark.unit)
 
 
 @pytest_asyncio.fixture
