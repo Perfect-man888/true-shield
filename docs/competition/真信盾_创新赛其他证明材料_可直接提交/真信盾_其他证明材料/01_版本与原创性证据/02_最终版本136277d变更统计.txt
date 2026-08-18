@@ -1,0 +1,82 @@
+﻿证据名称：Git 关键版本统计
+执行时间：2026-08-09T21:12:53（Asia/Shanghai）
+工作目录：D:\Projects\true-shield
+执行命令：git -c core.quotePath=false show --stat --summary --format=提交：%H%n作者：%an%n时间：%ad%n主题：%s%n --date=iso-local 136277d
+返回码：0
+耗时：0.05 秒
+是否超时：False
+说明：以下为命令原始输出，由脚本自动采集。
+==============================================================================
+[STDOUT]
+提交：136277d63f683385ccabee438c619384ab40184d
+作者：Perfect-man888
+时间：2026-08-09 20:04:02 +0800
+主题：feat: complete call guard and competition materials
+
+
+ .gitignore                                         |   4 +
+ README.md                                          | 122 ++---
+ .../app/callguard/CallGuardActionReceiver.kt       |   6 +
+ .../app/callguard/CallGuardLocalEvaluator.kt       |  43 +-
+ .../app/callguard/CallGuardNotificationHelper.kt   |  17 +-
+ .../com/trueshield/app/callguard/CallGuardStore.kt |  42 ++
+ .../callguard/TrueShieldCallScreeningService.kt    | 139 ++----
+ .../app/data/model/callguard/CallGuardModels.kt    |  39 ++
+ .../com/trueshield/app/data/network/ApiClient.kt   |   2 +-
+ .../trueshield/app/data/network/CallGuardApi.kt    |  12 +
+ .../app/data/repository/CallGuardRepository.kt     |  17 +
+ .../trueshield/app/ui/callguard/CallGuardScreen.kt |  92 ++++
+ .../app/ui/callguard/CallGuardUiState.kt           |   7 +
+ .../app/ui/callguard/CallGuardViewModel.kt         |  79 +++
+ .../app/ui/navigation/TrueShieldNavHost.kt         |  13 +-
+ .../java/com/trueshield/app/ExampleUnitTest.kt     |  17 -
+ .../app/callguard/CallGuardLocalEvaluatorTest.kt   |  54 ++
+ .../trueshield/app/ui/navigation/AppRouteTest.kt   |  41 ++
+ .../ui/risk/common/RiskAnalysisEngineTextTest.kt   |  42 ++
+ apps/api_server/.dockerignore                      |   9 +
+ apps/api_server/Dockerfile                         |  20 +
+ .../f2a7c91d4e10_add_call_guard_reports.py         |  57 +++
+ apps/api_server/app/api/routes/call_guard.py       |  33 ++
+ apps/api_server/app/api/routes/risk.py             |  36 +-
+ apps/api_server/app/models/__init__.py             |   4 +-
+ apps/api_server/app/models/call_guard.py           |  28 ++
+ apps/api_server/app/rules/phone_risk_rules.yaml    |  33 ++
+ apps/api_server/app/schemas/call_guard.py          |  74 ++-
+ apps/api_server/app/schemas/family.py              |  10 +-
+ apps/api_server/app/schemas/family_alert.py        |   8 +-
+ apps/api_server/app/schemas/family_alert_policy.py |   6 +-
+ apps/api_server/app/schemas/risk.py                |   4 +-
+ apps/api_server/app/schemas/risk_dashboard.py      |   4 +-
+ apps/api_server/app/schemas/risk_feedback.py       |   4 +-
+ apps/api_server/app/schemas/trusted_contact.py     |   6 +-
+ apps/api_server/app/services/call_guard_service.py | 111 ++++-
+ apps/api_server/app/services/password_reset.py     |   2 +-
+ apps/api_server/app/services/push_notification.py  |   2 +-
+ apps/api_server/app/services/risk_report_pdf.py    |  32 +-
+ apps/api_server/pyproject.toml                     |  13 +
+ apps/api_server/tests/conftest.py                  |  26 +-
+ apps/api_server/tests/test_call_guard_api.py       |  40 ++
+ .../tests/test_risk_report_pdf_renderer.py         |   2 +-
+ docker-compose.yml                                 |  38 ++
+ docs/00_v0.1_scope.md                              | 106 +---
+ docs/01_architecture.md                            |  44 +-
+ docs/02_database.md                                |  34 +-
+ docs/03_api.md                                     |  29 +-
+ docs/04_security.md                                |  35 +-
+ .../ada1f1106d5ee48438fd6e1d596e200e.jpg           | Bin 0 -> 608570 bytes
+ docs/competition/build_project_word.py             | 541 +++++++++++++++++++++
+ ...目功能与技术说明书（完善版）.docx | Bin 0 -> 661894 bytes
+ 52 files changed, 1844 insertions(+), 335 deletions(-)
+ delete mode 100644 apps/android_app/app/src/test/java/com/trueshield/app/ExampleUnitTest.kt
+ create mode 100644 apps/android_app/app/src/test/java/com/trueshield/app/callguard/CallGuardLocalEvaluatorTest.kt
+ create mode 100644 apps/android_app/app/src/test/java/com/trueshield/app/ui/navigation/AppRouteTest.kt
+ create mode 100644 apps/android_app/app/src/test/java/com/trueshield/app/ui/risk/common/RiskAnalysisEngineTextTest.kt
+ create mode 100644 apps/api_server/.dockerignore
+ create mode 100644 apps/api_server/Dockerfile
+ create mode 100644 apps/api_server/alembic/versions/f2a7c91d4e10_add_call_guard_reports.py
+ create mode 100644 apps/api_server/app/models/call_guard.py
+ create mode 100644 docs/competition/ada1f1106d5ee48438fd6e1d596e200e.jpg
+ create mode 100644 docs/competition/build_project_word.py
+ create mode 100644 docs/competition/真信盾项目功能与技术说明书（完善版）.docx
+
+[STDERR]

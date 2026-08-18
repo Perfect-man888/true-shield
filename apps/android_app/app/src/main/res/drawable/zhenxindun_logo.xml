@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 深蓝圆角底板，在圆形、方形和水滴形桌面遮罩下均保留安全边距。 -->
+    <path
+        android:fillColor="#061A3A"
+        android:pathData="M20,8 L88,8 C94.6,8 100,13.4 100,20 L100,88 C100,94.6 94.6,100 88,100 L20,100 C13.4,100 8,94.6 8,88 L8,20 C8,13.4 13.4,8 20,8 Z" />
+
+    <!-- 外层盾牌。 -->
+    <path
+        android:fillColor="#0877FF"
+        android:pathData="M54,17 L86,29 L86,51 C86,71 73,86 54,94 C35,86 22,71 22,51 L22,29 Z" />
+
+    <!-- 青色高光层，强化小尺寸识别度。 -->
+    <path
+        android:fillColor="#19DDF3"
+        android:pathData="M54,23 L79,33 L79,51 C79,67 69,79 54,86 C39,79 29,67 29,51 L29,33 Z" />
+
+    <!-- 盾牌内芯。 -->
+    <path
+        android:fillColor="#082C61"
+        android:pathData="M54,30 L72,37 L72,51 C72,63 65,72 54,78 C43,72 36,63 36,51 L36,37 Z" />
+
+    <!-- 可信校验标记。 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M43,52 L50.5,59.5 L64.5,44.5 L70,49.5 L50.5,69 L37.5,56 Z" />
+
+    <!-- 轻量电路节点，表达智能风控。 -->
+    <path
+        android:fillColor="#79F5FF"
+        android:pathData="M51,32 L57,32 L57,38 L51,38 Z M51,76 L57,76 L57,82 L51,82 Z" />
+</vector>

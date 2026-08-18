@@ -1,0 +1,36 @@
+﻿真信盾关键源代码证据清单
+生成日期：2026-08-09
+
+01. 后端通话护航服务
+    仓库路径：apps/api_server/app/services/call_guard_service.py
+    SHA-256：511750a4dab62b003b68ba4c57ca32c15ea894fba9851a93a5f7958e8cdaef32
+02. 后端通话护航接口
+    仓库路径：apps/api_server/app/api/routes/call_guard.py
+    SHA-256：1a737383ae02325bcacc4be78683f1a29b8aa15a2edae633301552e507aaf26f
+03. 统一风险分析接口
+    仓库路径：apps/api_server/app/api/routes/risk.py
+    SHA-256：e7cce4fb51408c2f128ea6c2fdaa43144c0e7dedcc6a1079307e310118ee1433
+04. 离线号码风险规则
+    仓库路径：apps/api_server/app/rules/phone_risk_rules.yaml
+    SHA-256：2c543438e14524678bee3004a3e85460f9f4dbd03471406c1937ac2768ca3c40
+05. 通话报告数据模型
+    仓库路径：apps/api_server/app/models/call_guard.py
+    SHA-256：962e2cdeb5adab89133845694d8bd1a5a5932d60f613827bf05c417166fef325
+06. 通话护航 API 测试
+    仓库路径：apps/api_server/tests/test_call_guard_api.py
+    SHA-256：1b8a9061d8665ad7d3ee46dafd9f1747a30ee83aabc6a228021cefd5c696be91
+07. 风险规则测试
+    仓库路径：apps/api_server/tests/test_risk_analyzer.py
+    SHA-256：5c2c92019e494ce50739ae6a714d26ecf7ab22c8970b88030e61823d92aa2f6d
+08. Android 来电筛查服务
+    仓库路径：apps/android_app/app/src/main/java/com/trueshield/app/callguard/TrueShieldCallScreeningService.kt
+    SHA-256：827e800a2908b878fe86bb53c868a4f4b768a4c61180b5c381f018841c733fb6
+09. Android 本地号码评估
+    仓库路径：apps/android_app/app/src/main/java/com/trueshield/app/callguard/CallGuardLocalEvaluator.kt
+    SHA-256：620fbc4f1f1192ce73ddcec65ecbf9fb056e6698fb20e4cffb1fb1a9f115ba30
+10. Android 通话护航页面
+    仓库路径：apps/android_app/app/src/main/java/com/trueshield/app/ui/callguard/CallGuardScreen.kt
+    SHA-256：13ec81ba35eea8a14aad1337fc37d1c0c717a4f751410b7ca0ee4371ff7d5190
+11. Android 本地规则测试
+    仓库路径：apps/android_app/app/src/test/java/com/trueshield/app/callguard/CallGuardLocalEvaluatorTest.kt
+    SHA-256：9f76bf9b5b1a43ba42d83d279debe97e43f532ac944b358eece58ba46da90df4

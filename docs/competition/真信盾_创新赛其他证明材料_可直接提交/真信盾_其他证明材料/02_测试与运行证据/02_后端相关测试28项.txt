@@ -1,0 +1,14 @@
+﻿证据名称：后端本轮相关回归测试
+执行时间：2026-08-09T21:12:54（Asia/Shanghai）
+工作目录：D:\Projects\true-shield\apps\api_server
+执行命令：uv run pytest tests/test_call_guard_api.py tests/test_risk_analyzer.py tests/test_risk_report_pdf_renderer.py -q
+返回码：0
+耗时：4.22 秒
+是否超时：False
+说明：以下为命令原始输出，由脚本自动采集。
+==============================================================================
+[STDOUT]
+............................                                             [100%]
+28 passed in 1.10s
+
+[STDERR]

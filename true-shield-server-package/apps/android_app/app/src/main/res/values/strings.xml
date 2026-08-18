@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">TrueShield</string>
+    <string name="family_alert_notification_channel_id">family_alerts</string>
+    <string name="app_name_brand">真信盾</string>
+    <string name="app_slogan">家庭反诈护盾</string>
+</resources>

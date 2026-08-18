@@ -1,0 +1,13 @@
+﻿证据名称：GitHub PR #1 状态
+执行时间：2026-08-09T21:12:53（Asia/Shanghai）
+工作目录：D:\Projects\true-shield
+执行命令：gh pr view 1 --repo Perfect-man888/true-shield --json number,title,state,isDraft,mergeStateStatus,headRefName,baseRefName,url,mergedAt
+返回码：0
+耗时：0.95 秒
+是否超时：False
+说明：以下为命令原始输出，由脚本自动采集。
+==============================================================================
+[STDOUT]
+{"baseRefName":"main","headRefName":"agent/publish-current-project","isDraft":false,"mergeStateStatus":"UNKNOWN","mergedAt":"2026-08-09T12:19:34Z","number":1,"state":"MERGED","title":"完善通话护航与参赛材料","url":"https://github.com/Perfect-man888/true-shield/pull/1"}
+
+[STDERR]

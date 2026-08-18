@@ -1,0 +1,13 @@
+﻿证据名称：后端 Ruff 代码规范检查
+执行时间：2026-08-09T21:12:54（Asia/Shanghai）
+工作目录：D:\Projects\true-shield\apps\api_server
+执行命令：uv run ruff check app tests
+返回码：0
+耗时：0.12 秒
+是否超时：False
+说明：以下为命令原始输出，由脚本自动采集。
+==============================================================================
+[STDOUT]
+All checks passed!
+
+[STDERR]
